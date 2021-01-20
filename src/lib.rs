@@ -1,9 +1,12 @@
 pub mod config;
 pub mod error;
 pub mod kafka;
-pub mod kafka_api;
 pub mod message;
-pub mod rpc_api;
 pub mod session;
-pub mod util;
 pub mod websocket;
+
+mod kafka_api;
+mod rpc_api;
+mod util;
+
+pub use error::ServiceError;

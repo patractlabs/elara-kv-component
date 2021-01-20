@@ -12,6 +12,7 @@ pub struct Sessions<S: Default, I: IdProvider = RandomStringIdProvider> {
 }
 
 pub type StorageSessions = Sessions<(Session, StorageKeys<HashSet<String>>)>;
+
 // TODO: support other session type for other subscription type
 
 impl<S: Default> Sessions<S> {

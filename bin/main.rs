@@ -90,7 +90,10 @@ async fn start_subscription_push(
 
                 // TODO:
                 Some(other) => {
-                    warn!("Receive a message with key: `{}`", String::from_utf8(other.to_vec()).expect(""));
+                    warn!(
+                        "Receive a message with key: `{}`",
+                        String::from_utf8(other.to_vec()).expect("")
+                    );
                 }
 
                 None => {

@@ -49,7 +49,7 @@ pub(crate) fn handle_state_subscribeStorage(
     };
 
     let id = sessions.new_subscription_id();
-    sessions.insert(id.clone(), (session.clone(), storage_keys));
+    sessions.insert(id.clone(), (session, storage_keys));
     Ok(Success {
         jsonrpc: Some(Version::V2),
         result: Value::from(id),
@@ -60,9 +60,8 @@ pub(crate) fn handle_state_subscribeStorage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{Params, Success};
+    use crate::message::{Id, Params, Success};
     use crate::session::Sessions;
-    use jsonrpc_core::Id;
 
     #[allow(non_snake_case)]
     #[tokio::test]
