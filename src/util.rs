@@ -86,7 +86,8 @@ mod tests {
         )
         .unwrap();
 
-        let success = handle_state_subscribeStorage(&mut sessions, session, request).unwrap();
+        let success =
+            handle_state_subscribeStorage(&mut sessions, session, request).unwrap();
 
         // unsubscribe
         let session = Session {
@@ -102,9 +103,12 @@ mod tests {
             id: Id::Num(2),
         };
 
-        let success =
-            handle_state_unsubscribeStorage(&mut sessions, session.clone(), request.clone())
-                .unwrap();
+        let success = handle_state_unsubscribeStorage(
+            &mut sessions,
+            session.clone(),
+            request.clone(),
+        )
+        .unwrap();
         assert_eq!(
             success,
             Success {
@@ -115,7 +119,8 @@ mod tests {
         );
 
         // unsubscribe again
-        let success = handle_state_unsubscribeStorage(&mut sessions, session, request).unwrap();
+        let success =
+            handle_state_unsubscribeStorage(&mut sessions, session, request).unwrap();
         assert_eq!(
             success,
             Success {

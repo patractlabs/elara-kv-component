@@ -175,8 +175,10 @@ async fn handle_request(connection: WsConnection, subscriber: Arc<KVSubscriber>)
                                 };
                             }
                             Err(err) => {
-                                let err = serde_json::to_string(&ResponseErrorMessage::from(err))
-                                    .expect("serialize a error response message");
+                                let err = serde_json::to_string(
+                                    &ResponseErrorMessage::from(err),
+                                )
+                                .expect("serialize a error response message");
                                 // TODO: need we to handle this?
                                 let _res = sender.send(Message::Text(err)).await;
                             }

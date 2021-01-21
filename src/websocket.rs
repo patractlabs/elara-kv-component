@@ -1,8 +1,8 @@
 use crate::error::{Result, ServiceError};
 use crate::kafka_api::KafkaStoragePayload;
 use crate::message::{
-    Failure, Id, MethodCall, RequestMessage, ResponseMessage, SubscribedData, SubscribedMessage,
-    SubscribedParams, Success, Version,
+    Failure, Id, MethodCall, RequestMessage, ResponseMessage, SubscribedData,
+    SubscribedMessage, SubscribedParams, Success, Version,
 };
 use crate::rpc_api::SubscribedResult;
 use crate::session::{Session, StorageKeys, StorageSessions};
@@ -85,7 +85,8 @@ impl WsConnection {
                     result,
                 };
 
-                Ok(serde_json::to_string(&response).expect("serialize response for elara"))
+                Ok(serde_json::to_string(&response)
+                    .expect("serialize response for elara"))
             }
             Err(err) => Err(err),
         }
@@ -96,11 +97,12 @@ impl WsConnection {
         session: Session,
         msg: RequestMessage,
     ) -> std::result::Result<Success, Failure> {
-        let request = serde_json::from_str::<MethodCall>(&*msg.request).map_err(|_| Failure {
-            jsonrpc: None,
-            error: jsonrpc_core::Error::parse_error(),
-            id: Id::Null,
-        })?;
+        let request =
+            serde_json::from_str::<MethodCall>(&*msg.request).map_err(|_| Failure {
+                jsonrpc: None,
+                error: jsonrpc_core::Error::parse_error(),
+                id: Id::Null,
+            })?;
 
         let id = request.id.clone();
         let storage_sessions = self.storage_sessions.clone();
@@ -108,9 +110,17 @@ impl WsConnection {
 
         // TODO: use hashmap rather than if-else
         let res = if request.method == *"state_subscribeStorage" {
-            util::handle_state_subscribeStorage(storage_sessions.deref_mut(), session, request)
+            util::handle_state_subscribeStorage(
+                storage_sessions.deref_mut(),
+                session,
+                request,
+            )
         } else if request.method == *"state_unsubscribeStorage" {
-            util::handle_state_unsubscribeStorage(storage_sessions.deref_mut(), session, request)
+            util::handle_state_unsubscribeStorage(
+                storage_sessions.deref_mut(),
+                session,
+                request,
+            )
         } else {
             Err(jsonrpc_core::Error::method_not_found())
         };

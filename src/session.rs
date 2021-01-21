@@ -2,7 +2,9 @@ use crate::message::{RequestMessage, SubscriptionId};
 use std::collections::hash_map::Iter;
 use std::collections::{HashMap, HashSet};
 
-pub use jsonrpc_pubsub::manager::{IdProvider, NumericIdProvider, RandomStringIdProvider};
+pub use jsonrpc_pubsub::manager::{
+    IdProvider, NumericIdProvider, RandomStringIdProvider,
+};
 
 /// Sessions maintains the ws sessions for different subscriptions for one connection
 #[derive(Default, Debug, Clone)]
