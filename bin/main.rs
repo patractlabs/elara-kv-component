@@ -1,9 +1,13 @@
+#[macro_use]
+use lazy_static::lazy_static;
+
 use elara_kv_component::config::*;
 use elara_kv_component::error::Result;
 use elara_kv_component::kafka::{KVSubscriber, KvConsumer, LogLevel, OwnedMessage};
 use elara_kv_component::message::ResponseErrorMessage;
 use elara_kv_component::websocket::{collect_subscribed_storage, WsConnection, WsServer};
 
+use elara_kv_component::client::WsClient;
 use futures::{SinkExt, StreamExt};
 use log::*;
 use rdkafka::Message as KafkaMessage;
@@ -11,6 +15,19 @@ use std::sync::Arc;
 use tokio::sync::broadcast::Receiver;
 use tokio_tungstenite::tungstenite;
 use tungstenite::{Error, Message};
+
+use std::collections::HashMap;
+use jsonrpc_core::{Output, Success};
+
+// lazy_static! {
+//     static ref HASHMAP: HashMap<&'static String, > = {
+//         let mut m = HashMap::new();
+//         m.insert(0, "foo");
+//         m.insert(1, "bar");
+//         m.insert(2, "baz");
+//         m
+//     };
+// }
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -22,6 +39,7 @@ async fn main() -> Result<()> {
     info!("Load config from: {}", path);
     let cfg = load_config(path).expect("Illegal config path");
     let cfg: Config = toml::from_str(&*cfg).expect("Config is illegal");
+    let cfg = cfg.validate().expect("Config is illegal");
 
     debug!("Load config: {:#?}", &cfg);
     let consumer = KvConsumer::new(cfg.kafka.config.into_iter(), LogLevel::Debug);
@@ -40,6 +58,13 @@ async fn main() -> Result<()> {
         .expect(&*format!("Cannot listen {}", addr));
     info!("Started ws server at {}", addr);
 
+    // started to subscribe chain node by ws client
+    for (node, cfg) in cfg.nodes.iter() {
+        let client = WsClient::connect(cfg.addr.clone())
+            .await
+            .expect(&format!("Cannot connect to {:?}", node));
+    }
+
     // accept a new connection
     loop {
         match server.accept().await {
@@ -53,13 +78,63 @@ async fn main() -> Result<()> {
     }
 }
 
-fn handle_connection(connection: WsConnection, subscriber: Arc<KVSubscriber>) {
+fn handle_connection(
+    connection: WsConnection,
+    subscriber: Arc<KVSubscriber>,
+    ws_client: WsClient,
+) {
     info!("New WebSocket connection: {}", connection.addr);
-    tokio::spawn(handle_request(connection, subscriber));
+    tokio::spawn(handle_request(connection.clone(), subscriber));
+    tokio::spawn(async move {
+        loop {
+            let mut receiver = ws_client.subscribe();
+            let mut conn_sender = connection.sender.lock().await;
+            let res = conn_sender.send().await;
+        }
+    });
 }
 
+
 // push subscription data for the connection
-async fn start_subscription_push(
+async fn start_ws_subscription(
+    connection: WsConnection,
+    ws_client: WsClient,
+) {
+    // receive kafka message in background and send them if possible
+    info!(
+        "Started to subscribe kafka data for peer: {}",
+        connection.addr
+    );
+
+    let mut receiver = ws_client.subscribe();
+    // TODO: handle different topic and key
+    while let Ok(msg) = receiver.recv().await {
+        debug!("Receive a message: {:?}", &msg);
+
+        match msg {
+            Message::Text(text) => {
+                // TODO: we need to dispatch them according to jsonrpc id
+                let output: Output = serde_json::from_str(&text).expect("Won't fail");
+                match output {
+                    Output::Failure(failure) => {
+                        warn!("Subscribe failed: {:?}", failure);
+                    },
+                    Output::Success(success) => {
+
+                    },
+                }
+            }
+            _ => {}
+        }
+    }
+
+    debug!("start_pushing_service return");
+}
+
+
+
+// push subscription data for the connection
+async fn start_kafka_subscription_push(
     connection: WsConnection,
     mut kafka_receiver: Receiver<OwnedMessage>,
 ) {
@@ -140,7 +215,10 @@ async fn handle_kafka_storage(connection: &WsConnection, msg: OwnedMessage) {
     let _res = sender.flush().await;
 }
 
-async fn handle_request(connection: WsConnection, subscriber: Arc<KVSubscriber>) {
+async fn handle_request(
+    connection: WsConnection,
+    subscriber: Arc<KVSubscriber>,
+) {
     let mut receiver = connection.receiver.lock().await;
     loop {
         let msg = receiver.next().await;
@@ -150,29 +228,31 @@ async fn handle_request(connection: WsConnection, subscriber: Arc<KVSubscriber>)
                 if msg.is_empty() {
                     continue;
                 }
-
                 match msg {
-                    Message::Ping(_) => {
-                        let _res = sender.send(Message::Pong(b"pong".to_vec())).await;
-                    }
-
                     Message::Pong(_) => {}
+                    Message::Binary(_) => {}
 
                     Message::Close(_) => {
                         // TODO: warn
                         break;
                     }
 
+                    Message::Ping(_) => {
+                        // TODO: need we to handle this?
+                        let _res = sender.send(Message::Pong(b"pong".to_vec())).await;
+                    }
+
                     Message::Text(s) => {
                         let res = connection.handle_message(s).await;
                         match res {
                             Ok(res) => {
-                                if let Ok(()) = sender.send(Message::Text(res)).await {
-                                    tokio::spawn(start_subscription_push(
-                                        connection.clone(),
-                                        subscriber.subscribe(),
-                                    ));
-                                };
+                                let _res = sender.send(Message::Text(res)).await;
+
+                                // TODO: remove kafka
+                                // tokio::spawn(start_kafka_subscription_push(
+                                //     connection.clone(),
+                                //     subscriber.subscribe(),
+                                // ));
                             }
                             Err(err) => {
                                 let err = serde_json::to_string(
@@ -185,9 +265,6 @@ async fn handle_request(connection: WsConnection, subscriber: Arc<KVSubscriber>)
                         };
                     }
 
-                    Message::Binary(_) => {
-                        // TODO: support compression
-                    }
                 };
             }
 

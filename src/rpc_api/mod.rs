@@ -1,3 +1,4 @@
+pub mod chain;
 pub mod state;
 
 use serde::{Deserialize, Serialize};

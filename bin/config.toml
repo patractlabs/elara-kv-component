@@ -1,6 +1,3 @@
-[log]
-level = "debug"
-
 [kafka.config]
 "group.id" = "elara-kv"
 "bootstrap.servers" = "localhost:9092"
@@ -13,3 +10,6 @@ topics = ["polkadot", "kusama"]
 
 [ws]
 addr = "localhost:9002"
+
+[nodes.polkadot1]
+addr = "wss://rpc.polkadot.io"

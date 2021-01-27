@@ -1,12 +1,54 @@
 use crate::message::{Error, MethodCall, Success, Value, Version};
-use crate::session::{Session, StorageKeys, StorageSessions};
+use crate::session::{
+    AuthorSession, AuthorSessions, ChainSession, ChainSessions, Session, Sessions,
+    StorageKeys, StorageSession, StorageSessions, SubscribedChainDataType,
+};
 use std::collections::HashSet;
+use std::sync::Arc;
 
 // TODO: refine these as a trait
 
+pub trait Subscriber {
+    /// subscribe method
+    fn subscribe(&mut self, request: MethodCall) -> Result<Success, Error>;
+    /// unsubscribe method
+    fn unsubscribe(&mut self, request: MethodCall) -> Result<Success, Error>;
+}
+
+pub struct StorageSubscriber<'a> {
+    pub sessions: &'a mut StorageSessions,
+    pub session: Session,
+}
+
+pub struct ChainHeadSubscriber<'a> {
+    pub sessions: &'a mut ChainSessions,
+    pub session: Session,
+}
+
+impl<'a> Subscriber for ChainHeadSubscriber<'a> {
+    fn subscribe(&mut self, request: MethodCall) -> Result<Success, Error> {
+        unimplemented!()
+    }
+
+    fn unsubscribe(&mut self, request: MethodCall) -> Result<Success, Error> {
+        handle_unsubscribe(self.sessions, self.session.clone(), request)
+    }
+}
+
+impl<'a> Subscriber for StorageSubscriber<'a> {
+    fn subscribe(&mut self, request: MethodCall) -> Result<Success, Error> {
+        handle_state_subscribeStorage(self.sessions, self.session.clone(), request)
+    }
+
+    fn unsubscribe(&mut self, request: MethodCall) -> Result<Success, Error> {
+        handle_unsubscribe(self.sessions, self.session.clone(), request)
+    }
+}
+
+#[inline]
 #[allow(non_snake_case)]
-pub(crate) fn handle_state_unsubscribeStorage(
-    sessions: &mut StorageSessions,
+pub(crate) fn handle_unsubscribe<T>(
+    sessions: &mut Sessions<T>,
     _session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
@@ -17,6 +59,61 @@ pub(crate) fn handle_state_unsubscribeStorage(
         result: Value::Bool(subscribed),
         id: request.id,
     })
+}
+
+// TODO: this api maybe need removed
+#[allow(non_snake_case)]
+pub(crate) fn handle_author_unwatchExtrinsic(
+    sessions: &mut AuthorSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    handle_unsubscribe(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_state_unsubscribeStorage(
+    sessions: &mut StorageSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    handle_unsubscribe(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_state_unsubscribeRuntimeVersion(
+    sessions: &mut ChainSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    handle_unsubscribe(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_chain_unsubscribeAllHeads(
+    sessions: &mut ChainSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    handle_unsubscribe(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_chain_unsubscribeNewHeads(
+    sessions: &mut ChainSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    handle_unsubscribe(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_chain_unsubscribeFinalizedHeads(
+    sessions: &mut ChainSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    handle_unsubscribe(sessions, session, request)
 }
 
 #[allow(non_snake_case)]
@@ -50,6 +147,60 @@ pub(crate) fn handle_state_subscribeStorage(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), (session, storage_keys));
+    Ok(Success {
+        jsonrpc: Some(Version::V2),
+        result: Value::from(id),
+        id: request.id,
+    })
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_chain_subscribeAllHeads(
+    sessions: &mut ChainSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    request.params.expect_no_params()?;
+
+    let id = sessions.new_subscription_id();
+    sessions.insert(id.clone(), (session, SubscribedChainDataType::AllHeads));
+    Ok(Success {
+        jsonrpc: Some(Version::V2),
+        result: Value::from(id),
+        id: request.id,
+    })
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_chain_subscribeNewHeads(
+    sessions: &mut ChainSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    request.params.expect_no_params()?;
+
+    let id = sessions.new_subscription_id();
+    sessions.insert(id.clone(), (session, SubscribedChainDataType::NewHeads));
+    Ok(Success {
+        jsonrpc: Some(Version::V2),
+        result: Value::from(id),
+        id: request.id,
+    })
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_chain_subscribeFinalizedHeads(
+    sessions: &mut ChainSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    request.params.expect_no_params()?;
+
+    let id = sessions.new_subscription_id();
+    sessions.insert(
+        id.clone(),
+        (session, SubscribedChainDataType::FinalizedHeads),
+    );
     Ok(Success {
         jsonrpc: Some(Version::V2),
         result: Value::from(id),

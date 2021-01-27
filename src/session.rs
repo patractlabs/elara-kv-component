@@ -8,18 +8,27 @@ pub use jsonrpc_pubsub::manager::{
 
 /// Sessions maintains the ws sessions for different subscriptions for one connection
 #[derive(Default, Debug, Clone)]
-pub struct Sessions<S: Default, I: IdProvider = RandomStringIdProvider> {
+pub struct Sessions<S, I: IdProvider = RandomStringIdProvider> {
     id_provider: I,
     map: HashMap<SubscriptionId, S>,
 }
 
-pub type StorageSessions = Sessions<(Session, StorageKeys<HashSet<String>>)>;
+pub type StorageSession = (Session, StorageKeys<HashSet<String>>);
+pub type StorageSessions = Sessions<StorageSession>;
 
-// TODO: support other session type for other subscription type
+pub type ChainSession = (Session, SubscribedChainDataType);
+pub type ChainSessions = Sessions<ChainSession>;
 
-impl<S: Default> Sessions<S> {
+pub type Extrinsic = Vec<u8>;
+pub type AuthorSession = (Session, Extrinsic);
+pub type AuthorSessions = Sessions<AuthorSession>;
+
+impl<S> Sessions<S> {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            id_provider: Default::default(),
+            map: Default::default(),
+        }
     }
 
     /// Returns the next ID for the subscription.
@@ -67,6 +76,14 @@ impl<T> Default for StorageKeys<T> {
     fn default() -> Self {
         Self::All
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum SubscribedChainDataType {
+    AllHeads,
+    NewHeads,
+    FinalizedHeads,
+    RuntimeVersion,
 }
 
 /// Session as a subscription session

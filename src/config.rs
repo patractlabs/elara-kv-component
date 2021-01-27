@@ -4,28 +4,70 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
+use toml::ser::Error;
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
-    pub log: LogConfig,
     pub kafka: KafkaConfig,
     pub ws: WsConfig,
+    pub nodes: HashMap<String, NodeConfig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct WsConfig {
     pub addr: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct KafkaConfig {
     pub topics: Vec<String>,
     pub config: HashMap<String, String>,
 }
+//
+// #[derive(Debug, Clone, Deserialize, Hash, Eq, PartialEq)]
+// #[serde(rename_all = "lowercase")]
+// pub enum NodeType {
+//     Polkadot,
+//     Kusama,
+// }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct LogConfig {
-    pub level: String,
+#[serde(rename_all = "camelCase")]
+pub struct NodeConfig {
+    pub addr: String,
+}
+
+impl Config {
+    pub fn validate(self) -> Result<Self, Error> {
+        let invalid_nodes = self
+            .nodes
+            .iter()
+            .filter(|(k, v)| {
+                let k = k.as_str();
+                if k == "polkadot" || k == "kusama" {
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect::<HashMap<_, _>>();
+
+        if !invalid_nodes.is_empty() {
+            Err(Error::Custom(format!(
+                "Some nodes are invalid: {:?}",
+                invalid_nodes
+            )))
+        } else if self.nodes.is_empty() {
+            Err(Error::Custom(
+                "nodes config at least need one node".to_string(),
+            ))
+        } else {
+            Ok(self)
+        }
+    }
 }
 
 pub fn load_config(path: &str) -> io::Result<String> {

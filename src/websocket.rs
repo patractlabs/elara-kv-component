@@ -5,12 +5,13 @@ use crate::message::{
     SubscribedMessage, SubscribedParams, Success, Version,
 };
 use crate::rpc_api::SubscribedResult;
-use crate::session::{Session, StorageKeys, StorageSessions};
+use crate::session::{ChainSessions, Session, StorageKeys, StorageSessions};
 use crate::util;
 use rdkafka::message::OwnedMessage;
 use rdkafka::Message as KafkaMessage;
 
 use crate::rpc_api::state::*;
+use crate::util::{StorageSubscriber, Subscriber};
 use futures::stream::{SplitSink, SplitStream};
 use futures::StreamExt;
 use std::net::SocketAddr;
@@ -21,7 +22,9 @@ use tokio::sync::{Mutex, RwLock};
 use tokio_tungstenite::{accept_async, tungstenite, WebSocketStream};
 use tungstenite::Message;
 
-/// A wrapper for WebSocketStream
+use std::collections::HashMap;
+
+/// A wrapper for WebSocketStream Server
 #[derive(Debug)]
 pub struct WsServer {
     listener: TcpListener,
@@ -34,8 +37,8 @@ pub struct WsConnection {
     pub sender: Arc<Mutex<SplitSink<WebSocketStream<TcpStream>, Message>>>,
     pub receiver: Arc<Mutex<SplitStream<WebSocketStream<TcpStream>>>>,
 
-    // TODO: add other session type
     pub storage_sessions: Arc<RwLock<StorageSessions>>,
+    pub chain_sessions: Arc<RwLock<ChainSessions>>,
 }
 
 impl WsServer {
@@ -55,6 +58,7 @@ impl WsServer {
             sender: Arc::new(Mutex::new(sender)),
             receiver: Arc::new(Mutex::new(receiver)),
             storage_sessions: Arc::new(RwLock::new(StorageSessions::new())),
+            chain_sessions: Arc::new(RwLock::new(ChainSessions::new())),
         })
     }
 }
@@ -110,11 +114,18 @@ impl WsConnection {
 
         // TODO: use hashmap rather than if-else
         let res = if request.method == *"state_subscribeStorage" {
-            util::handle_state_subscribeStorage(
-                storage_sessions.deref_mut(),
+            let mut sub = StorageSubscriber {
+                sessions: storage_sessions.deref_mut(),
                 session,
-                request,
-            )
+            };
+
+            sub.subscribe(request)
+
+        // util::handle_state_subscribeStorage(
+        //     storage_sessions.deref_mut(),
+        //     session,
+        //     request,
+        // )
         } else if request.method == *"state_unsubscribeStorage" {
             util::handle_state_unsubscribeStorage(
                 storage_sessions.deref_mut(),

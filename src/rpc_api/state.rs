@@ -27,3 +27,14 @@ impl From<&KafkaStoragePayload> for StateStorageResult {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeVersion {
+    pub spec_name: String,
+    pub impl_name: String,
+    pub authoring_version: u32,
+    pub spec_version: u32,
+    pub impl_version: u32,
+    pub apis: Vec<(String, u32)>,
+}
