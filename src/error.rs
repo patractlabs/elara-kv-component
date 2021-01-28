@@ -11,6 +11,9 @@ pub enum ServiceError {
 
     #[error(transparent)]
     JsonError(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    WsClientError(#[from] tokio_tungstenite::tungstenite::Error),
 }
 
 pub type Result<T> = std::result::Result<T, ServiceError>;

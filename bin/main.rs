@@ -16,8 +16,9 @@ use tokio::sync::broadcast::Receiver;
 use tokio_tungstenite::tungstenite;
 use tungstenite::{Error, Message};
 
+use jsonrpc_core::{Output, Response, Success};
 use std::collections::HashMap;
-use jsonrpc_core::{Output, Success};
+use tokio::sync::Mutex;
 
 // lazy_static! {
 //     static ref HASHMAP: HashMap<&'static String, > = {
@@ -58,11 +59,31 @@ async fn main() -> Result<()> {
         .expect(&*format!("Cannot listen {}", addr));
     info!("Started ws server at {}", addr);
 
+    let mut clients: WsClients = Default::default();
     // started to subscribe chain node by ws client
     for (node, cfg) in cfg.nodes.iter() {
-        let client = WsClient::connect(cfg.addr.clone())
+        let mut client = WsClient::connect(cfg.addr.clone())
             .await
             .expect(&format!("Cannot connect to {:?}", node));
+
+        let mut receiver = client.receiver();
+
+        use tokio::sync::broadcast::error::RecvError;
+        tokio::spawn(async move {
+            loop {
+                let resp = receiver.recv().await;
+
+                match resp {
+                    Err(RecvError::Closed) => return,
+                    Err(RecvError::Lagged(_)) => {}
+                    Ok(resp) => {
+                        info!("{:?}", resp);
+                    }
+                }
+            }
+        });
+
+        clients.insert(node.to_string(), Arc::new(Mutex::new(client)));
     }
 
     // accept a new connection
@@ -78,60 +99,16 @@ async fn main() -> Result<()> {
     }
 }
 
+type WsClients = HashMap<String, Arc<Mutex<WsClient>>>;
+
 fn handle_connection(
     connection: WsConnection,
     subscriber: Arc<KVSubscriber>,
-    ws_client: WsClient,
+    clients: WsClients,
 ) {
     info!("New WebSocket connection: {}", connection.addr);
     tokio::spawn(handle_request(connection.clone(), subscriber));
-    tokio::spawn(async move {
-        loop {
-            let mut receiver = ws_client.subscribe();
-            let mut conn_sender = connection.sender.lock().await;
-            let res = conn_sender.send().await;
-        }
-    });
 }
-
-
-// push subscription data for the connection
-async fn start_ws_subscription(
-    connection: WsConnection,
-    ws_client: WsClient,
-) {
-    // receive kafka message in background and send them if possible
-    info!(
-        "Started to subscribe kafka data for peer: {}",
-        connection.addr
-    );
-
-    let mut receiver = ws_client.subscribe();
-    // TODO: handle different topic and key
-    while let Ok(msg) = receiver.recv().await {
-        debug!("Receive a message: {:?}", &msg);
-
-        match msg {
-            Message::Text(text) => {
-                // TODO: we need to dispatch them according to jsonrpc id
-                let output: Output = serde_json::from_str(&text).expect("Won't fail");
-                match output {
-                    Output::Failure(failure) => {
-                        warn!("Subscribe failed: {:?}", failure);
-                    },
-                    Output::Success(success) => {
-
-                    },
-                }
-            }
-            _ => {}
-        }
-    }
-
-    debug!("start_pushing_service return");
-}
-
-
 
 // push subscription data for the connection
 async fn start_kafka_subscription_push(
@@ -215,10 +192,7 @@ async fn handle_kafka_storage(connection: &WsConnection, msg: OwnedMessage) {
     let _res = sender.flush().await;
 }
 
-async fn handle_request(
-    connection: WsConnection,
-    subscriber: Arc<KVSubscriber>,
-) {
+async fn handle_request(connection: WsConnection, subscriber: Arc<KVSubscriber>) {
     let mut receiver = connection.receiver.lock().await;
     loop {
         let msg = receiver.next().await;
@@ -230,6 +204,7 @@ async fn handle_request(
                 }
                 match msg {
                     Message::Pong(_) => {}
+
                     Message::Binary(_) => {}
 
                     Message::Close(_) => {
@@ -264,7 +239,6 @@ async fn handle_request(
                             }
                         };
                     }
-
                 };
             }
 

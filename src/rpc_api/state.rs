@@ -1,30 +1,17 @@
-use crate::kafka_api::KafkaStoragePayload;
 use crate::rpc_api::*;
 use serde::{Deserialize, Serialize};
 
 /// storage data as Subscribed data in `result`
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StateStorageResult {
     pub block: String,
+    // the first elem of tuple is key, the second is storage
     pub changes: Vec<(String, Option<String>)>,
 }
 
 impl From<StateStorageResult> for SubscribedResult {
     fn from(res: StateStorageResult) -> Self {
         Self::StateStorageResult(res)
-    }
-}
-
-impl From<&KafkaStoragePayload> for StateStorageResult {
-    fn from(payload: &KafkaStoragePayload) -> Self {
-        Self {
-            // assume payload at least have one
-            block: payload[0].hash.clone(),
-            changes: payload
-                .iter()
-                .map(|item| (item.key.clone(), item.storage.clone()))
-                .collect(),
-        }
     }
 }
 

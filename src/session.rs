@@ -78,7 +78,7 @@ impl<T> Default for StorageKeys<T> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SubscribedChainDataType {
     AllHeads,
     NewHeads,

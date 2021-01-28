@@ -26,13 +26,6 @@ pub struct KafkaConfig {
     pub topics: Vec<String>,
     pub config: HashMap<String, String>,
 }
-//
-// #[derive(Debug, Clone, Deserialize, Hash, Eq, PartialEq)]
-// #[serde(rename_all = "lowercase")]
-// pub enum NodeType {
-//     Polkadot,
-//     Kusama,
-// }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -45,13 +38,9 @@ impl Config {
         let invalid_nodes = self
             .nodes
             .iter()
-            .filter(|(k, v)| {
+            .filter(|(k, _v)| {
                 let k = k.as_str();
-                if k == "polkadot" || k == "kusama" {
-                    false
-                } else {
-                    true
-                }
+                !(k == "polkadot" || k == "kusama")
             })
             .collect::<HashMap<_, _>>();
 

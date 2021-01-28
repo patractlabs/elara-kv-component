@@ -13,7 +13,7 @@ use rdkafka::Message as KafkaMessage;
 use crate::rpc_api::state::*;
 use crate::util::{StorageSubscriber, Subscriber};
 use futures::stream::{SplitSink, SplitStream};
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -22,7 +22,9 @@ use tokio::sync::{Mutex, RwLock};
 use tokio_tungstenite::{accept_async, tungstenite, WebSocketStream};
 use tungstenite::Message;
 
-use std::collections::HashMap;
+use serde::Serialize;
+
+use log::*;
 
 /// A wrapper for WebSocketStream Server
 #[derive(Debug)]
@@ -66,6 +68,19 @@ impl WsServer {
 impl WsConnection {
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    pub async fn send_message(&self, msg: Message) -> Result<()> {
+        let res = self.sender.lock().await.send(msg).await;
+        res.map_err(ServiceError::WsClientError)
+    }
+
+    pub async fn send_messages(&self, msgs: Vec<Message>) -> Result<()> {
+        let mut sender = self.sender.lock().await;
+        for msg in msgs.into_iter() {
+            sender.feed(msg).await?;
+        }
+        sender.flush().await.map_err(ServiceError::WsClientError)
     }
 
     pub async fn handle_message(&self, msg: impl Into<String>) -> Result<String> {

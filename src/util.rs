@@ -4,7 +4,6 @@ use crate::session::{
     StorageKeys, StorageSession, StorageSessions, SubscribedChainDataType,
 };
 use std::collections::HashSet;
-use std::sync::Arc;
 
 // TODO: refine these as a trait
 
@@ -26,7 +25,7 @@ pub struct ChainHeadSubscriber<'a> {
 }
 
 impl<'a> Subscriber for ChainHeadSubscriber<'a> {
-    fn subscribe(&mut self, request: MethodCall) -> Result<Success, Error> {
+    fn subscribe(&mut self, _request: MethodCall) -> Result<Success, Error> {
         unimplemented!()
     }
 
@@ -147,6 +146,26 @@ pub(crate) fn handle_state_subscribeStorage(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), (session, storage_keys));
+    Ok(Success {
+        jsonrpc: Some(Version::V2),
+        result: Value::from(id),
+        id: request.id,
+    })
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_state_subscribeRuntimeVersion(
+    sessions: &mut ChainSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    request.params.expect_no_params()?;
+
+    let id = sessions.new_subscription_id();
+    sessions.insert(
+        id.clone(),
+        (session, SubscribedChainDataType::RuntimeVersion),
+    );
     Ok(Success {
         jsonrpc: Some(Version::V2),
         result: Value::from(id),

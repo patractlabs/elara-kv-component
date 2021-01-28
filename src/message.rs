@@ -55,6 +55,7 @@ pub struct SubscribedData {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SubscribedParams {
     pub subscription: SubscriptionId,
+    // TODO: use generic for result
     pub result: SubscribedResult,
 }
 

@@ -1,3 +1,4 @@
+use crate::rpc_api::state::StateStorageResult;
 use serde::{Deserialize, Serialize};
 
 pub type KafkaStoragePayload = Vec<KafkaStoragePayloadItem>;
@@ -12,4 +13,17 @@ pub struct KafkaStoragePayloadItem {
     pub is_full: bool,
     pub key: String,
     pub storage: Option<String>,
+}
+
+impl From<&KafkaStoragePayload> for StateStorageResult {
+    fn from(payload: &KafkaStoragePayload) -> Self {
+        Self {
+            // assume payload at least have one
+            block: payload[0].hash.clone(),
+            changes: payload
+                .iter()
+                .map(|item| (item.key.clone(), item.storage.clone()))
+                .collect(),
+        }
+    }
 }
