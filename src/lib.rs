@@ -1,6 +1,30 @@
 #[macro_use]
 extern crate lazy_static;
 
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use async_jsonrpc_client::{
+    MethodCall, Notification, NotificationStream, PubsubTransport, Transport,
+};
+use async_jsonrpc_client::RpcClientError;
+use async_jsonrpc_client::WsTransport;
+use futures::{Stream, TryStreamExt};
+use futures::channel::mpsc::UnboundedReceiver;
+use jsonrpc_types::{Call, Id, Params, Success, Version};
+use log::*;
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
+use tokio_stream::StreamExt;
+use web3::transports::WebSocket;
+
+pub use error::ServiceError;
+
+use crate::message::{SubscriptionId, Value};
+use crate::polkadot::send_state_storage;
+use crate::websocket::WsConnection;
+
 // pub mod client;
 pub mod config;
 pub mod error;
@@ -13,29 +37,11 @@ pub mod websocket;
 
 mod kafka_api;
 mod rpc_api;
-mod util;
 
-pub use error::ServiceError;
+// use web3::Result;
+// use web3::{DuplexTransport, Transport};
 
-use jsonrpc_core::Version;
-use jsonrpc_core::{Call, Id, Params, Success};
-use web3::transports::WebSocket;
-
-use web3::Result;
-use web3::{DuplexTransport, Transport};
-
-use crate::message::{SubscriptionId, Value};
-use crate::websocket::WsConnection;
-use futures::channel::mpsc::UnboundedReceiver;
-use futures::Stream;
-
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::net::SocketAddr;
-
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
+pub type Result<T, E = RpcClientError> = std::result::Result<T, E>;
 
 const state_subscribeStorage: &str = "state_subscribeStorage";
 const state_unsubscribeStorage: &str = "state_unsubscribeStorage";
@@ -53,7 +59,7 @@ const author_submitAndWatchExtrinsic: &str = "author_submitAndWatchExtrinsic";
 const author_unwatchExtrinsic: &str = "author_unwatchExtrinsic";
 
 pub struct RpcClient {
-    ws: WebSocket,
+    ws: WsTransport,
 }
 
 /// Successful response with subscription id
@@ -82,11 +88,11 @@ pub struct SubscribedSuccess {
 // TODO: use different struct for different chain node
 pub struct SubscribedStream {
     // TODO: define their own struct
-    storage_stream: UnboundedReceiver<Value>,
-    version_stream: UnboundedReceiver<Value>,
-    head_stream: UnboundedReceiver<Value>,
+    storage_stream: NotificationStream,
+    version_stream: NotificationStream,
+    head_stream: NotificationStream,
 }
-
+// 现在是收到的数据会发往所有的连接，而不区分连接某个订阅本身订阅的节点类型
 async fn send_messages_to_conns<T, S>(
     mut stream: S,
     conns: Arc<Mutex<HashMap<SocketAddr, WsConnection>>>,
@@ -100,12 +106,27 @@ async fn send_messages_to_conns<T, S>(
     while let Some(data) = stream.next().await {
         // we get a new data then we send it to all conns
         for (addr, conn) in conns.lock().await.iter() {
+            // send_message_to_conn(addr.clone(), conn.clone(), data.clone(), sender);
             let addr = *addr;
             let conn = conn.clone();
             // send data to conns
             sender(addr, conn, data.clone());
         }
     }
+}
+
+async fn send_message_to_conn<T>(
+    addr: SocketAddr,
+    conn: WsConnection,
+    data: T,
+    // Do send logic for one connection.
+    // It should be non-blocking
+    sender: fn(addr: SocketAddr, WsConnection, T),
+) where
+    T: Serialize + Clone,
+{
+    // send data to conns
+    sender(addr, conn, data);
 }
 
 impl SubscribedStream {
@@ -122,12 +143,19 @@ impl SubscribedStream {
         tokio::spawn(send_messages_to_conns(
             storage_stream,
             conns,
-            |_addr, _conn, _data| {},
+            |addr, conn, data| {
+                // TODO:
+                match serde_json::value::from_value(data.params.result.clone()) {
+                    Ok(data) => send_state_storage(addr, conn, data),
+
+                    Err(_err) => {
+                        warn!("Receive a illegal subscribed data: {}", &data)
+                    }
+                };
+            },
         ));
-        // tokio::spawn(send_messages_to_conns(version_stream, conns.clone(), |_, _| {
-        //     true
-        // }));
-        // tokio::spawn(send_messages_to_conns(head_stream, conns.clone()));
+
+        // TODO: spawn other subscription
     }
 
     // pub async fn send_messages_to_conn(this: Arc<Mutex<Self>>, conn: WsConnection) {
@@ -147,7 +175,7 @@ impl SubscribedStream {
 
 impl RpcClient {
     pub async fn new(addr: impl Into<String>) -> Result<Self> {
-        let ws = web3::transports::WebSocket::new(addr.into().as_str()).await?;
+        let ws = WsTransport::new(addr.into().as_str()).await?;
 
         Ok(Self { ws })
     }
@@ -167,9 +195,9 @@ impl RpcClient {
 
     async fn subscribe(
         &self,
-        method: impl Into<String>,
-    ) -> Result<UnboundedReceiver<Value>> {
-        let res = Transport::execute(&self.ws, method.into().as_str(), vec![]).await;
+        method: impl Into<String> + Send,
+    ) -> Result<NotificationStream> {
+        let res = Transport::send(&self.ws, method, None).await;
 
         match res {
             Err(err) => Err(err),
@@ -180,8 +208,8 @@ impl RpcClient {
                     SubscriptionId::String(s) => s,
                     SubscriptionId::Number(n) => n.to_string(),
                 };
-                let notifies = DuplexTransport::subscribe(&self.ws, id.into())?;
-                return Ok(notifies);
+                let notifies = PubsubTransport::subscribe(&self.ws, id.into())?;
+                Ok(notifies)
             }
         }
     }

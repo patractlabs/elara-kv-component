@@ -1,9 +1,36 @@
-use crate::message::{Error, MethodCall, Success, Value, Version};
-use crate::session::{
-    AuthorSession, AuthorSessions, ChainSession, ChainSessions, Session, Sessions,
-    StorageKeys, StorageSession, StorageSessions, SubscribedChainDataType,
+use crate::message::{Error, MethodCall, Params, Success, Value, Version};
+use super::session::{
+    StorageKeys, StorageSession, StorageSessions,
 };
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender, UnboundedReceiver};
+use crate::session::{Session, ChainSessions, AuthorSessions, Sessions};
+use crate::polkadot::session::{RuntimeVersionSessions, NewHeadSessions, FinalizedHeadSessions, AllHeadSessions};
+
+// Note: we need the session to handle the method call
+pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
+pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
+
+pub type MethodSenders = HashMap<&'static str, MethodSender>;
+pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
+
+pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
+    let mut receivers = HashMap::new();
+    let mut senders = HashMap::new();
+
+    // TODO:
+    let methods = vec![
+        "state_subscribeStorage",
+        "handle_state_unsubscribeStorage",
+    ];
+
+    for method in methods {
+        let (sender, receiver) = unbounded_channel::<(Session, MethodCall)>();
+        senders.insert(method, sender);
+        receivers.insert(method, receiver);
+    }
+    (senders, receivers)
+}
 
 // TODO: refine these as a trait
 
@@ -51,24 +78,24 @@ pub(crate) fn handle_unsubscribe<T>(
     _session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    let params = request.params.parse::<(String,)>()?;
+    let params = request.params.unwrap_or_default().parse::<(String,)>()?;
     let subscribed = sessions.remove(&params.0.into()).is_some();
     Ok(Success {
-        jsonrpc: Some(Version::V2),
+        jsonrpc: Version::V2_0,
         result: Value::Bool(subscribed),
         id: request.id,
     })
 }
 
-// TODO: this api maybe need removed
-#[allow(non_snake_case)]
-pub(crate) fn handle_author_unwatchExtrinsic(
-    sessions: &mut AuthorSessions,
-    session: Session,
-    request: MethodCall,
-) -> Result<Success, Error> {
-    handle_unsubscribe(sessions, session, request)
-}
+// TODO: we should remove the watch when the connection closed
+// #[allow(non_snake_case)]
+// pub(crate) fn handle_author_unwatchExtrinsic(
+//     sessions: &mut AuthorSessions,
+//     session: Session,
+//     request: MethodCall,
+// ) -> Result<Success, Error> {
+//     handle_unsubscribe(sessions, session, request)
+// }
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_state_unsubscribeStorage(
@@ -90,7 +117,7 @@ pub(crate) fn handle_state_unsubscribeRuntimeVersion(
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_chain_unsubscribeAllHeads(
-    sessions: &mut ChainSessions,
+    sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
@@ -99,7 +126,7 @@ pub(crate) fn handle_chain_unsubscribeAllHeads(
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_chain_unsubscribeNewHeads(
-    sessions: &mut ChainSessions,
+    sessions: &mut NewHeadSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
@@ -108,7 +135,7 @@ pub(crate) fn handle_chain_unsubscribeNewHeads(
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_chain_unsubscribeFinalizedHeads(
-    sessions: &mut ChainSessions,
+    sessions: &mut FinalizedHeadSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
@@ -121,7 +148,7 @@ pub(crate) fn handle_state_subscribeStorage(
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    let params: Vec<Vec<String>> = request.params.parse()?;
+    let params: Vec<Vec<String>> = request.params.unwrap_or_default().parse()?;
     // TODO: make sure the api semantics
     let storage_keys = match params {
         arr if arr.len() > 1 => {
@@ -147,7 +174,7 @@ pub(crate) fn handle_state_subscribeStorage(
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), (session, storage_keys));
     Ok(Success {
-        jsonrpc: Some(Version::V2),
+        jsonrpc: Version::V2_0,
         result: Value::from(id),
         id: request.id,
     })
@@ -155,19 +182,19 @@ pub(crate) fn handle_state_subscribeStorage(
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_state_subscribeRuntimeVersion(
-    sessions: &mut ChainSessions,
+    sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    request.params.expect_no_params()?;
+    expect_no_params(&request.params)?;
 
     let id = sessions.new_subscription_id();
     sessions.insert(
         id.clone(),
-        (session, SubscribedChainDataType::RuntimeVersion),
+        session,
     );
     Ok(Success {
-        jsonrpc: Some(Version::V2),
+        jsonrpc: Version::V2_0,
         result: Value::from(id),
         id: request.id,
     })
@@ -175,16 +202,16 @@ pub(crate) fn handle_state_subscribeRuntimeVersion(
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_chain_subscribeAllHeads(
-    sessions: &mut ChainSessions,
+    sessions: &mut AllHeadSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    request.params.expect_no_params()?;
+    expect_no_params(&request.params)?;
 
     let id = sessions.new_subscription_id();
-    sessions.insert(id.clone(), (session, SubscribedChainDataType::AllHeads));
+    sessions.insert(id.clone(), session);
     Ok(Success {
-        jsonrpc: Some(Version::V2),
+        jsonrpc: Version::V2_0,
         result: Value::from(id),
         id: request.id,
     })
@@ -192,36 +219,48 @@ pub(crate) fn handle_chain_subscribeAllHeads(
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_chain_subscribeNewHeads(
-    sessions: &mut ChainSessions,
+    sessions: &mut NewHeadSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    request.params.expect_no_params()?;
+    expect_no_params(&request.params)?;
 
     let id = sessions.new_subscription_id();
-    sessions.insert(id.clone(), (session, SubscribedChainDataType::NewHeads));
+    sessions.insert(id.clone(), session);
     Ok(Success {
-        jsonrpc: Some(Version::V2),
+        jsonrpc: Version::V2_0,
         result: Value::from(id),
         id: request.id,
     })
 }
 
+/// Check for no params, returns Err if any params
+pub fn expect_no_params(params: &Option<Params>) -> Result<(), Error> {
+    match params {
+        None => Ok(()),
+        Some(Params::Array(ref v)) if v.is_empty() => Ok(()),
+        Some(p) => Err(Error::invalid_params_with_details(
+            "No parameters were expected",
+            p,
+        )),
+    }
+}
+
 #[allow(non_snake_case)]
 pub(crate) fn handle_chain_subscribeFinalizedHeads(
-    sessions: &mut ChainSessions,
+    sessions: &mut FinalizedHeadSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    request.params.expect_no_params()?;
+    expect_no_params(&request.params)?;
 
     let id = sessions.new_subscription_id();
     sessions.insert(
         id.clone(),
-        (session, SubscribedChainDataType::FinalizedHeads),
+        session,
     );
     Ok(Success {
-        jsonrpc: Some(Version::V2),
+        jsonrpc: Version::V2_0,
         result: Value::from(id),
         id: request.id,
     })
@@ -265,11 +304,11 @@ mod tests {
             client_id: "0x2".to_string(),
         };
         let request = MethodCall {
-            jsonrpc: Some(Version::V2),
+            jsonrpc: Version::V2_0,
             method: "state_unsubscribeStorage".to_string(),
-            params: Params::Array(vec![Value::String(
+            params: Some(Params::Array(vec![Value::String(
                 success.result.as_str().unwrap().to_string(),
-            )]),
+            )])),
             id: Id::Num(2),
         };
 
@@ -282,7 +321,7 @@ mod tests {
         assert_eq!(
             success,
             Success {
-                jsonrpc: Some(Version::V2),
+                jsonrpc: Version::V2_0,
                 result: Value::Bool(true),
                 id: Id::Num(2),
             }
@@ -294,7 +333,7 @@ mod tests {
         assert_eq!(
             success,
             Success {
-                jsonrpc: Some(Version::V2),
+                jsonrpc: Version::V2_0,
                 result: Value::Bool(false),
                 id: Id::Num(2),
             }

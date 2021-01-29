@@ -8,18 +8,26 @@ pub use jsonrpc_pubsub::manager::{
 
 /// Sessions maintains the ws sessions for different subscriptions for one connection
 #[derive(Default, Debug, Clone)]
-pub struct Sessions<S, I: IdProvider = RandomStringIdProvider> {
+pub struct Sessions<SessionItem, I: IdProvider = RandomStringIdProvider> {
     id_provider: I,
-    map: HashMap<SubscriptionId, S>,
+    map: HashMap<SubscriptionId, SessionItem>,
 }
 
 pub type StorageSession = (Session, StorageKeys<HashSet<String>>);
 pub type StorageSessions = Sessions<StorageSession>;
 
+// TODO: 为每种链定义各自的订阅的sessions
+
+/// when subscribed without any param, use this type to store sessions
+pub type NoParamSession = Session;
+/// when subscribed without any param, use this type to store sessions
+pub type NoParamSessions = Sessions<NoParamSession>;
+
+// TODO: remove these
 pub type ChainSession = (Session, SubscribedChainDataType);
 pub type ChainSessions = Sessions<ChainSession>;
 
-pub type Extrinsic = Vec<u8>;
+pub type Extrinsic = String;
 pub type AuthorSession = (Session, Extrinsic);
 pub type AuthorSessions = Sessions<AuthorSession>;
 
@@ -89,6 +97,7 @@ pub enum SubscribedChainDataType {
 /// Session as a subscription session
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Session {
+    // TODO: we should maintains chain by typing them.
     pub chain_name: String,
     pub client_id: String,
 }

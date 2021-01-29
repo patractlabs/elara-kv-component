@@ -22,7 +22,7 @@ futures = "0.3"
 rdkafka = { git = "https://github.com/fede1024/rust-rdkafka.git", branch = "master", features = ["cmake-build"] }
 log = "0.4"
 env_logger = "0.8"
-jsonrpc-core = "16.0"
+#jsonrpc-core = "16.0"
 jsonrpc-pubsub = "16.0"
 thiserror = "1.0"
 once_cell = "1.5"
@@ -33,6 +33,8 @@ url = "2.0"
 web3 = { version = "0.15.0", default-features = false, features =  ["http-tls", "signing", "ws-tls-tokio"]}
 
 tokio-stream = "0.1"
+async-jsonrpc-client = { git = "https://github.com/koushiro/async-jsonrpc-client", branch = "master"}
+jsonrpc-types = "0.3"
 
 #clap = "2.33"
 #actix-web = { version = "4.0.0-beta.1", features = ["rustls"] }
