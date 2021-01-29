@@ -1,12 +1,13 @@
 use crate::polkadot::rpc_api::SubscribedResult;
-use serde::{Deserialize, Serialize};
 
 use crate::error::ServiceError;
+use crate::session::Session;
+
 pub use jsonrpc_types::{
     Call, Error, Failure, Id, MethodCall, Output, Params, Success, Value, Version,
 };
 use jsonrpc_types::{SubscriptionNotification, SubscriptionNotificationParams};
-use crate::session::Session;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -137,10 +138,9 @@ impl_from_num!(u16);
 impl_from_num!(u32);
 impl_from_num!(u64);
 
-
 pub fn serialize_elara_api<T>(session: &Session, data: &T) -> String
-    where
-        T: Serialize
+where
+    T: Serialize,
 {
     let data = serde_json::to_string(&data).expect("serialize a subscribed data");
     let msg = SubscribedMessage {
@@ -150,7 +150,6 @@ pub fn serialize_elara_api<T>(session: &Session, data: &T) -> String
     };
     serde_json::to_string(&msg).expect("serialize a subscribed data")
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -164,7 +163,7 @@ mod tests {
 {
     "id": "b6c6d0aa16b0f5eb65e6fd87c6ffbba2",
     "chain": "polkadot",
-    "request": "{\n\"id\": 141,\n\"jsonrpc\": \"2.0\",\n\"METHOD\": \"state_subscribeStorage\",\n\"params\": [ [\"0x2aeddc77fe58c98d50bd37f1b90840f9cd7f37317cd20b61e9bd46fab87047149c21b6ab44c00eb3127a30e486492921e58f2564b36ab1ca21ff630672f0e76920edd601f8f2b89a\"]]}"
+    "request": "{\n\"id\": 141,\n\"jsonrpc\": \"2.0\",\n\"method\": \"state_subscribeStorage\",\n\"params\": [ [\"0x2aeddc77fe58c98d50bd37f1b90840f9cd7f37317cd20b61e9bd46fab87047149c21b6ab44c00eb3127a30e486492921e58f2564b36ab1ca21ff630672f0e76920edd601f8f2b89a\"]]}"
 }
 "#;
 
@@ -196,7 +195,7 @@ mod tests {
 {
     "id": "b6c6d0aa16b0f5eb65e6fd87c6ffbba2",
     "chain": "polkadot",
-    "data": "{\"jsonrpc\": \"2.0\",\n\"METHOD\":\"state_storage\", \n\"params\": {\n\"subscription\": \"ffMpMJgyQt3rmHx8\",\n\t\t\"result\": {\n\t\t  \"block\": \"0x04b67ec2b6ff34ebd58ed95fe9aad1068f805d2519ca8a24b986994b6764f410\",\n\t\t  \"changes\": [\n    [\"0x2aeddc77fe58c98d50bd37f1b90840f9cd7f37317cd20b61e9bd46fab870471456c62bce26605ee05c3c4c795e554a782e59ef5043ca9772f32dfb1ad7de832878d662194193955e\",              null ],[\"0x2aeddc77fe58c98d50bd37f1b90840f943a953ac082e08b6527ce262dbd4abf2e7731c5a045ae2174d185feff2d91e9a5c3c4c795e554a782e59ef5043ca9772f32dfb1ad7de832878d662194193955e\", \"0x3a875e45c13575f66eadb2d60608df9068a90e46ed33723098021e8cedd67d3a09f09f90ad20584949\"]]}}}"
+    "data": "{\"jsonrpc\": \"2.0\",\n\"method\":\"state_storage\", \n\"params\": {\n\"subscription\": \"ffMpMJgyQt3rmHx8\",\n\t\t\"result\": {\n\t\t  \"block\": \"0x04b67ec2b6ff34ebd58ed95fe9aad1068f805d2519ca8a24b986994b6764f410\",\n\t\t  \"changes\": [\n    [\"0x2aeddc77fe58c98d50bd37f1b90840f9cd7f37317cd20b61e9bd46fab870471456c62bce26605ee05c3c4c795e554a782e59ef5043ca9772f32dfb1ad7de832878d662194193955e\",              null ],[\"0x2aeddc77fe58c98d50bd37f1b90840f943a953ac082e08b6527ce262dbd4abf2e7731c5a045ae2174d185feff2d91e9a5c3c4c795e554a782e59ef5043ca9772f32dfb1ad7de832878d662194193955e\", \"0x3a875e45c13575f66eadb2d60608df9068a90e46ed33723098021e8cedd67d3a09f09f90ad20584949\"]]}}}"
 }
 "#;
 

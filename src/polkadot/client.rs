@@ -11,6 +11,7 @@ use crate::polkadot::session::{
 use crate::session::ISessions;
 use crate::session::{NoParamSessions, Session, Sessions};
 use crate::websocket::WsConnection;
+
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
@@ -292,7 +293,7 @@ mod tests {
             r##"
 {
   "jsonrpc": "2.0",
-  "METHOD": "state_subscribeStorage",
+  "method": "state_subscribeStorage",
   "params": [],
   "id": 1
 }
