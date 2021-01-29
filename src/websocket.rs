@@ -4,15 +4,14 @@ use crate::message::{
     Failure, Id, MethodCall, RequestMessage, ResponseMessage, SubscribedData,
     SubscribedMessage, SubscribedParams, Success, Version,
 };
-use crate::polkadot::session::PolkadotSessions;
-use crate::polkadot::util;
-use crate::polkadot::util::{
+use crate::polkadot::client;
+use crate::polkadot::client::{
     polkadot_channel, MethodReceiver, MethodReceivers, MethodSender, MethodSenders,
-    StorageSubscriber, Subscriber,
 };
-use crate::rpc_api::state::*;
-use crate::rpc_api::SubscribedResult;
-use crate::session::{Session, StorageKeys, StorageSessions};
+use crate::polkadot::rpc_api::state::*;
+use crate::polkadot::rpc_api::SubscribedResult;
+use crate::polkadot::session::PolkadotSessions;
+use crate::session::Session;
 
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
@@ -36,15 +35,11 @@ pub struct WsServer {
 #[derive(Debug, Clone)]
 pub struct WsConnection {
     cfg: Config,
-    pub addr: SocketAddr,
-    pub sender: Arc<Mutex<WsSender>>,
-    pub receiver: Arc<Mutex<WsReceiver>>,
-
+    addr: SocketAddr,
+    sender: Arc<Mutex<WsSender>>,
+    receiver: Arc<Mutex<WsReceiver>>,
+    polkadot_method_senders: MethodSenders,
     pub polkadot_sessions: PolkadotSessions,
-
-    // pub storage_sessions: Arc<RwLock<StorageSessions>>,
-    // pub chain_sessions: Arc<RwLock<ChainSessions>>,
-    method_senders: MethodSenders,
 }
 
 // TODO: 增加一个API，在连接刚启动的时候指定这个连接可以订阅哪些节点
@@ -73,8 +68,8 @@ impl WsServer {
         let stream = accept_async(stream).await?;
         let (sender, receiver) = stream.split();
 
-        // TODO: config
-        let (method_senders, _method_receivers) = polkadot_channel();
+        // TODO: add node switch
+        let (polkadot_method_senders, polkadot_method_receivers) = polkadot_channel();
 
         Ok(WsConnection {
             cfg,
@@ -82,24 +77,8 @@ impl WsServer {
             sender: Arc::new(Mutex::new(sender)),
             receiver: Arc::new(Mutex::new(receiver)),
             polkadot_sessions: Default::default(),
-            // storage_sessions: Arc::new(RwLock::new(StorageSessions::new())),
-            // chain_sessions: Arc::new(RwLock::new(ChainSessions::new())),
-            method_senders,
+            polkadot_method_senders,
         })
-    }
-}
-
-// we start to spawn handler task in background to response subscription method
-async fn handle_message_background(conn: WsConnection, receivers: MethodReceivers) {
-    for (_method, mut receiver) in receivers.into_iter() {
-        let _conn = conn.clone();
-
-        // TODO:
-        tokio::spawn(async move {
-            while let Some(_request) = receiver.recv().await {
-                // TODO:
-            }
-        });
     }
 }
 
@@ -110,7 +89,7 @@ async fn handle_state_subscribeStorage(
 ) {
     while let Some((session, request)) = receiver.recv().await {
         let mut sessions = sessions.storage_sessions.write().await;
-        util::handle_state_subscribeStorage(sessions.deref_mut(), session, request);
+        client::handle_state_subscribeStorage(sessions.deref_mut(), session, request);
 
         let _sender = ws_sender.lock().await;
     }
@@ -148,15 +127,29 @@ impl WsConnection {
             .map_err(|_| Failure {
                 jsonrpc: Version::V2_0,
                 error: jsonrpc_types::Error::parse_error(),
-                // TODO: need to be null
                 id: None,
             })
             .map_err(|err| {
                 serde_json::to_string(&err).expect("serialize a failure message")
             })?;
 
+        // handle different chain node
+        match msg.chain.as_str() {
+            crate::polkadot::consts::NODE_NAME => {
+                self._handle_polkadot_message(session, request)
+            }
+            _ => Err(ServiceError::ChainNotSupport(msg.chain.clone()))
+                .map_err(|err| err.to_string()),
+        }
+    }
+
+    fn _handle_polkadot_message(
+        &self,
+        session: Session,
+        request: MethodCall,
+    ) -> std::result::Result<(), String> {
         let sender = self
-            .method_senders
+            .polkadot_method_senders
             .get(request.method.as_str())
             .ok_or(Failure {
                 jsonrpc: Version::V2_0,

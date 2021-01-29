@@ -1,14 +1,20 @@
+//! Client related session handlers
+//! Set sessions according to user's subscription request
+
 use super::session::{StorageKeys, StorageSessions};
 use crate::message::{Error, MethodCall, Params, Success, Value, Version};
+use crate::polkadot::consts;
 use crate::polkadot::session::{
     AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
     WatchExtrinsicSessions,
 };
-use crate::session::{ChainSessions, NoParamSessions, Session, Sessions};
+use crate::session::ISessions;
+use crate::session::{NoParamSessions, Session, Sessions};
+use crate::websocket::WsConnection;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
-// Note: we need the session to handle the method call
+// Note: we need the session to handle the METHOD call
 pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
 pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
 
@@ -20,7 +26,14 @@ pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
     let mut senders = HashMap::new();
 
     // TODO:
-    let methods = vec!["state_subscribeStorage", "handle_state_unsubscribeStorage"];
+    let methods = vec![
+        consts::state_subscribeStorage,
+        consts::state_subscribeRuntimeVersion,
+        consts::chain_subscribeAllHeads,
+        consts::chain_subscribeNewHeads,
+        consts::chain_subscribeFinalizedHeads,
+        consts::author_submitAndWatchExtrinsic,
+    ];
 
     for method in methods {
         let (sender, receiver) = unbounded_channel::<(Session, MethodCall)>();
@@ -30,43 +43,47 @@ pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
     (senders, receivers)
 }
 
+// we start to spawn handler task in background to response subscription METHOD
+async fn handle_subscribe_response_background(
+    conn: WsConnection,
+    receivers: MethodReceivers,
+) {
+    for (method, mut receiver) in receivers.into_iter() {
+        let conn = conn.clone();
+
+        let task = match method {
+            consts::state_subscribeStorage => {
+                async move {
+                    while let Some((session, request)) = receiver.recv().await {
+                        // TODO:
+                    }
+                }
+            }
+
+            _ => {
+                // TODO:
+                unimplemented!()
+            }
+        };
+        // TODO:
+        tokio::spawn(task);
+    }
+}
+
 // TODO: refine these as a trait
 
-pub trait Subscriber {
-    /// subscribe method
-    fn subscribe(&mut self, request: MethodCall) -> Result<Success, Error>;
-    /// unsubscribe method
-    fn unsubscribe(&mut self, request: MethodCall) -> Result<Success, Error>;
+pub trait ApiHandler<'a> {
+    const METHOD: &'static str;
+    fn handle(
+        &'a mut self,
+        session: Session,
+        request: MethodCall,
+    ) -> Result<Success, Error>;
 }
 
-pub struct StorageSubscriber<'a> {
+pub struct StorageHandler<'a> {
     pub sessions: &'a mut StorageSessions,
     pub session: Session,
-}
-
-pub struct ChainHeadSubscriber<'a> {
-    pub sessions: &'a mut ChainSessions,
-    pub session: Session,
-}
-
-impl<'a> Subscriber for ChainHeadSubscriber<'a> {
-    fn subscribe(&mut self, _request: MethodCall) -> Result<Success, Error> {
-        unimplemented!()
-    }
-
-    fn unsubscribe(&mut self, request: MethodCall) -> Result<Success, Error> {
-        handle_unsubscribe(self.sessions, self.session.clone(), request)
-    }
-}
-
-impl<'a> Subscriber for StorageSubscriber<'a> {
-    fn subscribe(&mut self, request: MethodCall) -> Result<Success, Error> {
-        handle_state_subscribeStorage(self.sessions, self.session.clone(), request)
-    }
-
-    fn unsubscribe(&mut self, request: MethodCall) -> Result<Success, Error> {
-        handle_unsubscribe(self.sessions, self.session.clone(), request)
-    }
 }
 
 // TODO: we should remove the watch when the connection closed
@@ -90,7 +107,7 @@ pub(crate) fn handle_state_unsubscribeStorage(
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_state_unsubscribeRuntimeVersion(
-    sessions: &mut ChainSessions,
+    sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
@@ -275,7 +292,7 @@ mod tests {
             r##"
 {
   "jsonrpc": "2.0",
-  "method": "state_subscribeStorage",
+  "METHOD": "state_subscribeStorage",
   "params": [],
   "id": 1
 }
@@ -304,27 +321,25 @@ mod tests {
             &mut sessions,
             session.clone(),
             request.clone(),
-        )
-        .unwrap();
+        );
         assert_eq!(
             success,
-            Success {
+            Ok(Success {
                 jsonrpc: Version::V2_0,
                 result: Value::Bool(true),
                 id: Id::Num(2),
-            }
+            })
         );
 
         // unsubscribe again
-        let success =
-            handle_state_unsubscribeStorage(&mut sessions, session, request).unwrap();
+        let success = handle_state_unsubscribeStorage(&mut sessions, session, request);
         assert_eq!(
             success,
-            Success {
+            Ok(Success {
                 jsonrpc: Version::V2_0,
                 result: Value::Bool(false),
                 id: Id::Num(2),
-            }
+            })
         );
     }
 }

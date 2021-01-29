@@ -1,11 +1,7 @@
-use rdkafka::error::KafkaError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ServiceError {
-    #[error(transparent)]
-    KafkaError(#[from] KafkaError),
-
     #[error(transparent)]
     JsonrpcError(#[from] jsonrpc_types::Error),
 

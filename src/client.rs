@@ -1,5 +1,3 @@
-// use futures::channel::mpsc;
-// use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, Stream, StreamExt, TryStreamExt};
 use log::*;
@@ -7,7 +5,6 @@ use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::{oneshot, Mutex};
-// use tokio::sync::broadcast::{UnboundedSender, UnboundedReceiver};
 use crate::message::MethodCall;
 use message::{Id, Response, Value};
 use jsonrpc_pubsub::SubscriptionId;
