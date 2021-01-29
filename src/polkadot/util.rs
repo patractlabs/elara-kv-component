@@ -1,11 +1,12 @@
+use super::session::{StorageKeys, StorageSessions};
 use crate::message::{Error, MethodCall, Params, Success, Value, Version};
-use super::session::{
-    StorageKeys, StorageSession, StorageSessions,
+use crate::polkadot::session::{
+    AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
+    WatchExtrinsicSessions,
 };
-use std::collections::{HashSet, HashMap};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender, UnboundedReceiver};
-use crate::session::{Session, ChainSessions, AuthorSessions, Sessions};
-use crate::polkadot::session::{RuntimeVersionSessions, NewHeadSessions, FinalizedHeadSessions, AllHeadSessions};
+use crate::session::{ChainSessions, NoParamSessions, Session, Sessions};
+use std::collections::{HashMap, HashSet};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 // Note: we need the session to handle the method call
 pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
@@ -19,10 +20,7 @@ pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
     let mut senders = HashMap::new();
 
     // TODO:
-    let methods = vec![
-        "state_subscribeStorage",
-        "handle_state_unsubscribeStorage",
-    ];
+    let methods = vec!["state_subscribeStorage", "handle_state_unsubscribeStorage"];
 
     for method in methods {
         let (sender, receiver) = unbounded_channel::<(Session, MethodCall)>();
@@ -71,31 +69,15 @@ impl<'a> Subscriber for StorageSubscriber<'a> {
     }
 }
 
-#[inline]
+// TODO: we should remove the watch when the connection closed
 #[allow(non_snake_case)]
-pub(crate) fn handle_unsubscribe<T>(
-    sessions: &mut Sessions<T>,
-    _session: Session,
+pub(crate) fn handle_author_unwatchExtrinsic(
+    sessions: &mut WatchExtrinsicSessions,
+    session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    let params = request.params.unwrap_or_default().parse::<(String,)>()?;
-    let subscribed = sessions.remove(&params.0.into()).is_some();
-    Ok(Success {
-        jsonrpc: Version::V2_0,
-        result: Value::Bool(subscribed),
-        id: request.id,
-    })
+    handle_unsubscribe(sessions, session, request)
 }
-
-// TODO: we should remove the watch when the connection closed
-// #[allow(non_snake_case)]
-// pub(crate) fn handle_author_unwatchExtrinsic(
-//     sessions: &mut AuthorSessions,
-//     session: Session,
-//     request: MethodCall,
-// ) -> Result<Success, Error> {
-//     handle_unsubscribe(sessions, session, request)
-// }
 
 #[allow(non_snake_case)]
 pub(crate) fn handle_state_unsubscribeStorage(
@@ -186,52 +168,7 @@ pub(crate) fn handle_state_subscribeRuntimeVersion(
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    expect_no_params(&request.params)?;
-
-    let id = sessions.new_subscription_id();
-    sessions.insert(
-        id.clone(),
-        session,
-    );
-    Ok(Success {
-        jsonrpc: Version::V2_0,
-        result: Value::from(id),
-        id: request.id,
-    })
-}
-
-#[allow(non_snake_case)]
-pub(crate) fn handle_chain_subscribeAllHeads(
-    sessions: &mut AllHeadSessions,
-    session: Session,
-    request: MethodCall,
-) -> Result<Success, Error> {
-    expect_no_params(&request.params)?;
-
-    let id = sessions.new_subscription_id();
-    sessions.insert(id.clone(), session);
-    Ok(Success {
-        jsonrpc: Version::V2_0,
-        result: Value::from(id),
-        id: request.id,
-    })
-}
-
-#[allow(non_snake_case)]
-pub(crate) fn handle_chain_subscribeNewHeads(
-    sessions: &mut NewHeadSessions,
-    session: Session,
-    request: MethodCall,
-) -> Result<Success, Error> {
-    expect_no_params(&request.params)?;
-
-    let id = sessions.new_subscription_id();
-    sessions.insert(id.clone(), session);
-    Ok(Success {
-        jsonrpc: Version::V2_0,
-        result: Value::from(id),
-        id: request.id,
-    })
+    _handle_no_param_method_call(sessions, session, request)
 }
 
 /// Check for no params, returns Err if any params
@@ -247,23 +184,74 @@ pub fn expect_no_params(params: &Option<Params>) -> Result<(), Error> {
 }
 
 #[allow(non_snake_case)]
+pub(crate) fn handle_chain_subscribeAllHeads(
+    sessions: &mut AllHeadSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    _handle_chain_subscribeHeads(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn handle_chain_subscribeNewHeads(
+    sessions: &mut NewHeadSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    _handle_chain_subscribeHeads(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
 pub(crate) fn handle_chain_subscribeFinalizedHeads(
     sessions: &mut FinalizedHeadSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    _handle_chain_subscribeHeads(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+#[inline]
+fn handle_unsubscribe<T>(
+    sessions: &mut Sessions<T>,
+    _session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    let params = request.params.unwrap_or_default().parse::<(String,)>()?;
+    let subscribed = sessions.remove(&params.0.into()).is_some();
+    Ok(Success {
+        jsonrpc: Version::V2_0,
+        result: Value::Bool(subscribed),
+        id: request.id,
+    })
+}
+
+#[allow(non_snake_case)]
+#[inline]
+fn _handle_no_param_method_call(
+    sessions: &mut NoParamSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
     expect_no_params(&request.params)?;
 
     let id = sessions.new_subscription_id();
-    sessions.insert(
-        id.clone(),
-        session,
-    );
+    sessions.insert(id.clone(), session);
     Ok(Success {
         jsonrpc: Version::V2_0,
         result: Value::from(id),
         id: request.id,
     })
+}
+
+#[allow(non_snake_case)]
+#[inline]
+fn _handle_chain_subscribeHeads(
+    sessions: &mut NoParamSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    _handle_no_param_method_call(sessions, session, request)
 }
 
 #[cfg(test)]

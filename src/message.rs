@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::ServiceError;
 pub use jsonrpc_types::{
-    Error, Failure, Id, MethodCall, Output, Params, Success, Value, Version,
+    Call, Error, Failure, Id, MethodCall, Output, Params, Success, Value, Version,
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -57,6 +57,19 @@ pub struct SubscribedParams {
     pub subscription: SubscriptionId,
     // TODO: use generic for result
     pub result: SubscribedResult,
+}
+
+/// Successful response from chain node with subscription id
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubscribedSuccess {
+    /// Protocol version
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jsonrpc: Option<Version>,
+    /// Result
+    pub result: SubscriptionId,
+    /// Correlation id
+    pub id: Id,
 }
 
 // Note: Altered from jsonrpc_pubsub::SubscriptionId
