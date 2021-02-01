@@ -9,11 +9,8 @@ use async_jsonrpc_client::{NotificationStream, RpcClientError};
 use futures::{Stream, StreamExt};
 use log::*;
 use serde::Serialize;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Polkadot related subscription data
 pub struct SubscribedStream {
@@ -27,6 +24,8 @@ pub struct SubscribedStream {
 pub async fn start_polkadot_subscribe(
     client: &RpcClient,
 ) -> Result<SubscribedStream, RpcClientError> {
+    info!("Starting to subscribe node `{}` ...", client.node_name());
+
     let storage = client
         .subscribe(consts::state_subscribeStorage, None)
         .await?;
@@ -73,20 +72,6 @@ async fn send_messages_to_conns<T, S>(
     }
 }
 
-// async fn send_message_to_conn<T>(
-//     addr: SocketAddr,
-//     conn: WsConnection,
-//     data: T,
-//     // Do send logic for one connection.
-//     // It should be non-blocking
-//     sender: fn(addr: SocketAddr, WsConnection, T),
-// ) where
-//     T: Serialize + Clone,
-// {
-//     // send data to conns
-//     sender(addr, conn, data);
-// }
-
 impl SubscribedStream {
     // start to push subscription data to all connections in background
     pub fn start(self, conns: WsConnections) {
@@ -104,7 +89,6 @@ impl SubscribedStream {
             storage,
             conns.clone(),
             |addr, conn, data| {
-                // TODO:
                 match serde_json::value::from_value(data.params.result.clone()) {
                     Ok(data) => send_state_storage(addr, conn, data),
 
@@ -119,7 +103,6 @@ impl SubscribedStream {
             version,
             conns.clone(),
             |addr, conn, data| {
-                // TODO:
                 match serde_json::value::from_value(data.params.result.clone()) {
                     Ok(data) => send_state_runtime_version(addr, conn, data),
 
@@ -134,7 +117,6 @@ impl SubscribedStream {
             all_head,
             conns.clone(),
             |addr, conn, data| {
-                // TODO:
                 match serde_json::value::from_value(data.params.result.clone()) {
                     Ok(data) => send_chain_all_head(addr, conn, data),
 
@@ -149,7 +131,6 @@ impl SubscribedStream {
             new_head,
             conns.clone(),
             |addr, conn, data| {
-                // TODO:
                 match serde_json::value::from_value(data.params.result.clone()) {
                     Ok(data) => send_chain_new_head(addr, conn, data),
 
@@ -164,7 +145,6 @@ impl SubscribedStream {
             finalized_head,
             conns.clone(),
             |addr, conn, data| {
-                // TODO:
                 match serde_json::value::from_value(data.params.result.clone()) {
                     Ok(data) => send_chain_finalized_head(addr, conn, data),
 

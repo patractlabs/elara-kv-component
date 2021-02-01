@@ -8,7 +8,7 @@ use crate::message::{
 use crate::polkadot::consts;
 use crate::polkadot::session::{
     AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
-    StorageSession, WatchExtrinsicSessions,
+    WatchExtrinsicSessions,
 };
 use crate::session::ISessions;
 use crate::session::{NoParamSessions, Session, Sessions};
@@ -36,14 +36,20 @@ pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
     let mut receivers = HashMap::new();
     let mut senders = HashMap::new();
 
-    // TODO:
     let methods = vec![
         consts::state_subscribeStorage,
+        consts::state_unsubscribeStorage,
         consts::state_subscribeRuntimeVersion,
+        consts::state_unsubscribeRuntimeVersion,
         consts::chain_subscribeAllHeads,
+        consts::chain_unsubscribeAllHeads,
         consts::chain_subscribeNewHeads,
+        consts::chain_unsubscribeNewHeads,
         consts::chain_subscribeFinalizedHeads,
-        consts::author_submitAndWatchExtrinsic,
+        consts::chain_unsubscribeFinalizedHeads,
+        // TODO: now don't support these api
+        // consts::author_submitAndWatchExtrinsic,
+        // consts::author_unwatchExtrinsic,
     ];
 
     for method in methods {
@@ -56,7 +62,7 @@ pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
 
 // we start to spawn handler task in background to response for every subscription
 pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodReceivers) {
-    for (method, mut receiver) in receivers.into_iter() {
+    for (method, receiver) in receivers.into_iter() {
         let conn = conn.clone();
 
         match method {
@@ -116,7 +122,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
                     conn.polkadot_sessions.all_head_sessions.clone(),
                     conn.clone(),
                     receiver,
-                    handle_chain_subscribeNewHeads,
+                    handle_chain_subscribeAllHeads,
                 ));
             }
             consts::chain_unsubscribeAllHeads => {
@@ -124,7 +130,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
                     conn.polkadot_sessions.all_head_sessions.clone(),
                     conn.clone(),
                     receiver,
-                    handle_chain_unsubscribeNewHeads,
+                    handle_chain_unsubscribeAllHeads,
                 ));
             }
 
@@ -133,7 +139,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
                     conn.polkadot_sessions.finalized_head_sessions.clone(),
                     conn.clone(),
                     receiver,
-                    handle_chain_subscribeNewHeads,
+                    handle_chain_subscribeFinalizedHeads,
                 ));
             }
             consts::chain_unsubscribeFinalizedHeads => {
@@ -141,7 +147,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
                     conn.polkadot_sessions.finalized_head_sessions.clone(),
                     conn.clone(),
                     receiver,
-                    handle_chain_unsubscribeNewHeads,
+                    handle_chain_unsubscribeFinalizedHeads,
                 ));
             }
 
@@ -150,8 +156,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
     }
 }
 
-
-// according to different message to handle subscription
+// according to different message to handle different subscription
 async fn start_handle<SessionItem, S: ISessions<SessionItem>>(
     sessions: Arc<RwLock<S>>,
     conn: WsConnection,
@@ -169,7 +174,7 @@ async fn start_handle<SessionItem, S: ISessions<SessionItem>>(
             Ok(s) => s,
             Err(s) => s,
         };
-        conn.send_message(Message::Text(msg));
+        let _res = conn.send_message(Message::Text(msg)).await;
     }
 }
 
@@ -197,6 +202,8 @@ async fn start_handle<SessionItem, S: ISessions<SessionItem>>(
 // }
 
 // TODO: we should remove the watch when the connection closed
+// TODO: now we don't support extrinsic
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 pub(crate) fn handle_author_unwatchExtrinsic(
     sessions: &mut WatchExtrinsicSessions,
@@ -258,7 +265,6 @@ pub(crate) fn handle_state_subscribeStorage(
     request: MethodCall,
 ) -> Result<Success, Error> {
     let params: Vec<Vec<String>> = request.params.unwrap_or_default().parse()?;
-    // TODO: make sure the api semantics
     let storage_keys = match params {
         arr if arr.len() > 1 => {
             return Err(Error::invalid_params("more than one param"));
@@ -272,7 +278,6 @@ pub(crate) fn handle_state_subscribeStorage(
                 .map(|v| v.to_string())
                 .collect::<HashSet<String>>();
 
-            // TODO: try to keep same behavior with substrate
             if len != keys.len() {
                 return Err(Error::invalid_params("some keys are invalid"));
             }

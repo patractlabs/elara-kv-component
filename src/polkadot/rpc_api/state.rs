@@ -1,4 +1,3 @@
-use crate::polkadot::rpc_api::*;
 use serde::{Deserialize, Serialize};
 
 /// storage data as Subscribed data in `result`
@@ -7,12 +6,6 @@ pub struct StateStorage {
     pub block: String,
     // the first elem of tuple is key, the second is storage
     pub changes: Vec<(String, Option<String>)>,
-}
-
-impl From<StateStorage> for SubscribedResult {
-    fn from(res: StateStorage) -> Self {
-        Self::StateStorageResult(res)
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

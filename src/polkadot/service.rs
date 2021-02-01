@@ -1,16 +1,16 @@
 //! Service related session handlers.
 //! Send subscribed data to user according to subscription sessions
 
-use jsonrpc_types::{SubscriptionNotification, SubscriptionNotificationParams};
 use log::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::net::SocketAddr;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::error::ServiceError;
-use crate::message::{serialize_elara_api, Id, Version};
-use crate::polkadot::client::MethodReceivers;
+use crate::message::{
+    serialize_elara_api, Id, SubscriptionNotification, SubscriptionNotificationParams,
+    Version,
+};
 use crate::polkadot::consts;
 use crate::polkadot::rpc_api::chain::ChainHead;
 use crate::polkadot::rpc_api::state::{RuntimeVersion, StateStorage};
@@ -18,10 +18,9 @@ use crate::polkadot::session::{
     AllHeadSession, FinalizedHeadSession, NewHeadSession, RuntimeVersionSession,
     StorageKeys, StorageSession,
 };
-use crate::session::{ISessions, NoParamSession, Session};
+use crate::session::ISessions;
 use crate::websocket::WsConnection;
 
-// TODO: refine these api
 /// according to some states or sessions, we transform some data from chain node to new suitable values.
 /// Mainly include some simple filtering operations.
 pub trait SubscriptionTransformer<'a> {
@@ -39,22 +38,22 @@ pub struct StateStorageTransformer<'a> {
 }
 
 pub struct StateRuntimeVersionTransformer<'a> {
-    session: &'a RuntimeVersionSession,
+    _session: &'a RuntimeVersionSession,
     subscription_id: Id,
 }
 
 pub struct ChainAllHeadTransformer<'a> {
-    session: &'a AllHeadSession,
+    _session: &'a AllHeadSession,
     subscription_id: Id,
 }
 
 pub struct ChainNewHeadTransformer<'a> {
-    session: &'a NewHeadSession,
+    _session: &'a NewHeadSession,
     subscription_id: Id,
 }
 
 pub struct ChainFinalizedHeadTransformer<'a> {
-    session: &'a FinalizedHeadSession,
+    _session: &'a FinalizedHeadSession,
     subscription_id: Id,
 }
 
@@ -63,7 +62,6 @@ impl<'a> SubscriptionTransformer<'a> for ChainAllHeadTransformer<'a> {
     type Output = SubscriptionNotification<ChainHead>;
     const METHOD: &'static str = consts::chain_allHead;
 
-    // TODO: use macro to impl these no param transform
     fn transform(&'a self, input: Self::Input) -> Self::Output {
         Self::Output {
             jsonrpc: Version::V2_0,
@@ -82,7 +80,6 @@ impl<'a> SubscriptionTransformer<'a> for ChainNewHeadTransformer<'a> {
     type Output = SubscriptionNotification<ChainHead>;
     const METHOD: &'static str = consts::chain_newHead;
 
-    // TODO: use macro to impl these no param transform
     fn transform(&'a self, input: Self::Input) -> Self::Output {
         Self::Output {
             jsonrpc: Version::V2_0,
@@ -101,7 +98,6 @@ impl<'a> SubscriptionTransformer<'a> for ChainFinalizedHeadTransformer<'a> {
     type Output = SubscriptionNotification<ChainHead>;
     const METHOD: &'static str = consts::chain_finalizedHead;
 
-    // TODO: use macro to impl these no param transform
     fn transform(&'a self, input: Self::Input) -> Self::Output {
         Self::Output {
             jsonrpc: Version::V2_0,
@@ -178,8 +174,6 @@ impl<'a> SubscriptionTransformer<'a> for StateStorageTransformer<'a> {
     }
 }
 
-use tokio_tungstenite::tungstenite;
-
 fn send_message(
     addr: SocketAddr,
     conn: WsConnection,
@@ -188,12 +182,6 @@ fn send_message(
 ) {
     tokio::spawn(async move {
         let res = conn.send_message(Message::Text(msg)).await;
-        // match res {
-        //     Err(ServiceError::WsServerError(tungstenite::Error::ConnectionClosed)) => {
-        //         // TODO: remove the connection
-        //         // conn
-        //     }
-        // }
         if let Err(err) = res {
             warn!(
                 "Error occurred when send {} data to peer `{}`: {:?}",
@@ -239,7 +227,7 @@ pub fn send_state_runtime_version(
             .iter()
         {
             let transformer = StateRuntimeVersionTransformer {
-                session,
+                _session: session,
                 subscription_id: subscription_id.clone().into(),
             };
 
@@ -262,7 +250,7 @@ pub fn send_chain_all_head(addr: SocketAddr, conn: WsConnection, data: ChainHead
             conn.polkadot_sessions.all_head_sessions.read().await.iter()
         {
             let transformer = ChainAllHeadTransformer {
-                session,
+                _session: session,
                 subscription_id: subscription_id.clone().into(),
             };
             let data = transformer.transform(data.clone());
@@ -279,7 +267,7 @@ pub fn send_chain_new_head(addr: SocketAddr, conn: WsConnection, data: ChainHead
             conn.polkadot_sessions.new_head_sessions.read().await.iter()
         {
             let transformer = ChainNewHeadTransformer {
-                session,
+                _session: session,
                 subscription_id: subscription_id.clone().into(),
             };
             let data = transformer.transform(data.clone());
@@ -296,7 +284,7 @@ pub fn send_chain_finalized_head(addr: SocketAddr, conn: WsConnection, data: Cha
             conn.polkadot_sessions.new_head_sessions.read().await.iter()
         {
             let transformer = ChainFinalizedHeadTransformer {
-                session,
+                _session: session,
                 subscription_id: subscription_id.clone().into(),
             };
             let data = transformer.transform(data.clone());

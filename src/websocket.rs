@@ -1,25 +1,23 @@
 use crate::config::{Config, NodeConfig};
 use crate::error::{Result, ServiceError};
-use crate::message::{Failure, MethodCall, RequestMessage, Success, Version};
-use crate::polkadot::client;
+use crate::message::{Failure, MethodCall, RequestMessage, Version};
 use crate::polkadot::client::{
-    handle_polkadot_response, polkadot_channel, MethodReceiver, MethodReceivers,
-    MethodSender, MethodSenders,
+    handle_polkadot_response, polkadot_channel, MethodSenders,
 };
-use crate::polkadot::rpc_api::SubscribedResult;
 use crate::polkadot::session::PolkadotSessions;
 use crate::session::Session;
 
+use log::*;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
-use log::*;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::ops::DerefMut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::sync::{Mutex, RwLock};
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::{accept_async, tungstenite, WebSocketStream};
 use tungstenite::Message;
 
@@ -38,6 +36,7 @@ pub struct WsConnection {
     sender: Arc<Mutex<WsSender>>,
     receiver: Arc<Mutex<WsReceiver>>,
     polkadot_method_senders: MethodSenders,
+    // TODO: split sessions from connection
     /// Polkadot related sessions
     pub polkadot_sessions: PolkadotSessions,
 }
@@ -65,7 +64,7 @@ impl WsConnections {
     async fn close_conn(conn: Option<WsConnection>) {
         match conn {
             Some(conn) => {
-                conn.close().await;
+                let _ = conn.close().await;
             }
             None => {}
         };
@@ -165,6 +164,22 @@ impl WsConnection {
         sender.close().await.map_err(ServiceError::WsServerError)
     }
 
+    pub async fn send_close(&self) -> Result<()> {
+        if self.closed() {
+            return Ok(());
+        }
+        let res = self
+            .sender
+            .lock()
+            .await
+            .send(Message::Close(Some(CloseFrame {
+                code: CloseCode::Normal,
+                reason: Default::default(),
+            })))
+            .await;
+        res.map_err(ServiceError::WsServerError)
+    }
+
     pub async fn send_message(&self, msg: Message) -> Result<()> {
         if self.closed() {
             return Ok(());
@@ -203,7 +218,6 @@ impl WsConnection {
             .map_err(|err| {
                 serde_json::to_string(&err).expect("serialize a failure message")
             })?;
-
 
         // handle different chain node
         match msg.chain.as_str() {

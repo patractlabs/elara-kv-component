@@ -1,10 +1,27 @@
 use crate::message::{RequestMessage, SubscriptionId};
 use std::collections::hash_map::Iter;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub use jsonrpc_pubsub::manager::{
     IdProvider, NumericIdProvider, RandomStringIdProvider,
 };
+
+/// Session as a subscription session
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub struct Session {
+    // TODO: remove chain_name ?
+    pub chain_name: String,
+    pub client_id: String,
+}
+
+impl From<&RequestMessage> for Session {
+    fn from(msg: &RequestMessage) -> Self {
+        Self {
+            chain_name: msg.chain.clone(),
+            client_id: msg.id.clone(),
+        }
+    }
+}
 
 /// when subscribed without any param, use this type to store sessions
 pub type NoParamSession = Session;
@@ -72,23 +89,6 @@ impl<S: Default, I: IdProvider> Sessions<S, I> {
         Self {
             id_provider,
             map: Default::default(),
-        }
-    }
-}
-
-/// Session as a subscription session
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub struct Session {
-    // TODO: we should maintains chain by typing them.
-    pub chain_name: String,
-    pub client_id: String,
-}
-
-impl From<&RequestMessage> for Session {
-    fn from(msg: &RequestMessage) -> Self {
-        Self {
-            chain_name: msg.chain.clone(),
-            client_id: msg.id.clone(),
         }
     }
 }

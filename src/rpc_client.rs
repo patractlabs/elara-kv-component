@@ -1,10 +1,4 @@
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
-
-use crate::message::{
-    Call, Id, Params, SubscribedSuccess, SubscriptionId, Success, Version,
-};
+use crate::message::{Params, SubscribedSuccess};
 pub use async_jsonrpc_client::RpcClientError;
 use async_jsonrpc_client::WsTransport;
 use async_jsonrpc_client::{NotificationStream, PubsubTransport, Transport};
@@ -14,14 +8,18 @@ pub type Result<T, E = RpcClientError> = std::result::Result<T, E>;
 /// RpcClient is used to subscribe some data from different chain node.
 pub struct RpcClient {
     ws: WsTransport,
+    node: String,
 }
 
-// TODO: add config for different chain node
 impl RpcClient {
-    pub async fn new(addr: impl Into<String>) -> Result<Self> {
+    pub async fn new(node: String, addr: impl Into<String>) -> Result<Self> {
         let ws = WsTransport::new(addr.into().as_str()).await?;
 
-        Ok(Self { ws })
+        Ok(Self { node, ws })
+    }
+
+    pub fn node_name(&self) -> String {
+        self.node.clone()
     }
 
     /// subscribe a data from chain node, return a stream for it.

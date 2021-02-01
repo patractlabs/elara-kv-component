@@ -1,5 +1,4 @@
-#[macro_use]
-use lazy_static::lazy_static;
+mod cmd;
 
 use elara_kv_component::config::*;
 use elara_kv_component::error::Result;
@@ -7,7 +6,6 @@ use elara_kv_component::rpc_client::RpcClient;
 use futures::StreamExt;
 use log::*;
 use std::sync::Arc;
-use tokio::sync::broadcast::Receiver;
 use tokio_tungstenite::tungstenite;
 use tungstenite::{Error, Message};
 
@@ -15,9 +13,11 @@ use elara_kv_component::polkadot;
 use elara_kv_component::rpc_client;
 use elara_kv_component::websocket::{WsConnection, WsConnections, WsServer};
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
+
+use elara_kv_component::error::ServiceError::WsServerError;
+use structopt::StructOpt;
 
 type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
 
@@ -25,11 +25,10 @@ type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
 async fn main() -> Result<()> {
     env_logger::init();
 
-    // TODO; refine config
-    // TODO: add cli
-    let path = "bin/config.toml";
-    info!("Load config from: {}", path);
-    let cfg = load_config(path).expect("Illegal config path");
+    let opt = cmd::Opt::from_args();
+
+    info!("Load config from: {}", &opt.config);
+    let cfg = load_config(&opt.config).expect("Illegal config path");
     let cfg: Config = toml::from_str(&*cfg).expect("Config is illegal");
     let cfg = cfg.validate().expect("Config is illegal");
 
@@ -39,7 +38,7 @@ async fn main() -> Result<()> {
     let server = WsServer::bind(addr)
         .await
         .expect(&*format!("Cannot listen {}", addr));
-    info!("Started ws server at {}", addr);
+    info!("Started WebSocket server at {}", addr);
 
     // started to subscribe chain node by ws client
     let mut connections = WsConnections::new();
@@ -95,7 +94,7 @@ async fn create_clients(
     let mut clients: WsClients = Default::default();
     // started to subscribe chain node by ws client
     for (node, cfg) in cfg.nodes.iter() {
-        let client = RpcClient::new(cfg.addr.clone())
+        let client = RpcClient::new(node.clone(), cfg.addr.clone())
             .await
             .expect(&format!("Cannot connect to {}: {}", node, cfg.addr));
 
@@ -130,7 +129,7 @@ async fn handle_connection(connection: WsConnection) {
                     Message::Binary(_) => {}
 
                     Message::Close(_) => {
-                        // TODO: warn
+                        let _res = connection.send_close().await;
                         break;
                     }
 
@@ -168,13 +167,15 @@ async fn handle_connection(connection: WsConnection) {
 
     match connection.close().await {
         Ok(()) => {}
-        Err(err) => {
+        Err(WsServerError(Error::ConnectionClosed)) => {}
+        Err(WsServerError(err)) => {
             warn!(
                 "Error occurred when closed connection to {}: {}",
                 connection.addr(),
                 err,
             );
         }
+        _ => {}
     };
 
     info!("Closed connection to peer {}", connection.addr());

@@ -1,13 +1,8 @@
 use thiserror::Error;
 
+// TODO: refine error
 #[derive(Error, Debug)]
 pub enum ServiceError {
-    #[error(transparent)]
-    JsonrpcError(#[from] jsonrpc_types::Error),
-
-    #[error(transparent)]
-    JsonError(#[from] serde_json::Error),
-
     #[error(transparent)]
     WsServerError(#[from] tokio_tungstenite::tungstenite::Error),
 

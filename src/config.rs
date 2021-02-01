@@ -1,15 +1,14 @@
 use serde::Deserialize;
+use toml::ser::Error;
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
-use toml::ser::Error;
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
-    pub kafka: KafkaConfig,
     pub ws: WsConfig,
     pub nodes: HashMap<String, NodeConfig>,
 }
@@ -18,13 +17,6 @@ pub struct Config {
 #[serde(rename_all = "camelCase")]
 pub struct WsConfig {
     pub addr: String,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct KafkaConfig {
-    pub topics: Vec<String>,
-    pub config: HashMap<String, String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

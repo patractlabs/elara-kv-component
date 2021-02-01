@@ -5,9 +5,6 @@
 "session.timeout.ms" = "6000"
 "enable.auto.commit" = "true"
 
-[kafka]
-topics = ["polkadot", "kusama"]
-
 [ws]
 addr = "localhost:9002"
 

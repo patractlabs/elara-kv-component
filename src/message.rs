@@ -1,12 +1,10 @@
-use crate::polkadot::rpc_api::SubscribedResult;
-
 use crate::error::ServiceError;
 use crate::session::Session;
 
 pub use jsonrpc_types::{
-    Call, Error, Failure, Id, MethodCall, Output, Params, Success, Value, Version,
+    Call, Error, Failure, Id, MethodCall, Output, Params, SubscriptionNotification,
+    SubscriptionNotificationParams, Success, Value, Version,
 };
-use jsonrpc_types::{SubscriptionNotification, SubscriptionNotificationParams};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -47,9 +45,6 @@ pub struct SubscribedMessage {
     /// A jsonrpc string about subscription
     pub data: String,
 }
-
-pub type SubscribedData = SubscriptionNotification<SubscribedResult>;
-pub type SubscribedParams = SubscriptionNotificationParams<SubscribedResult>;
 
 /// Successful response from chain node with subscription id
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -201,7 +196,7 @@ mod tests {
 
         let v: SubscribedMessage = serde_json::from_str(msg)?;
         dbg!(&v.data);
-        let _v: SubscribedData = serde_json::from_str(&*v.data)?;
+        let _v: SubscriptionNotification = serde_json::from_str(&*v.data)?;
 
         Ok(())
     }
