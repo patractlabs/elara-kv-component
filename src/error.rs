@@ -9,7 +9,7 @@ pub enum ServiceError {
     JsonError(#[from] serde_json::Error),
 
     #[error(transparent)]
-    WsClientError(#[from] tokio_tungstenite::tungstenite::Error),
+    WsServerError(#[from] tokio_tungstenite::tungstenite::Error),
 
     #[error("the chain `{0}` is not available")]
     ChainNotSupport(String),

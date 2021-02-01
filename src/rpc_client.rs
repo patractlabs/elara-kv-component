@@ -2,21 +2,12 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use async_jsonrpc_client::RpcClientError;
-use async_jsonrpc_client::WsTransport;
-use async_jsonrpc_client::{NotificationStream, PubsubTransport, Transport};
-
-use futures::{Stream, StreamExt};
-use log::*;
-use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
-
-use crate::error::ServiceError;
 use crate::message::{
     Call, Id, Params, SubscribedSuccess, SubscriptionId, Success, Version,
 };
-use crate::polkadot::service::send_state_storage;
-use crate::websocket::WsConnection;
+pub use async_jsonrpc_client::RpcClientError;
+use async_jsonrpc_client::WsTransport;
+use async_jsonrpc_client::{NotificationStream, PubsubTransport, Transport};
 
 pub type Result<T, E = RpcClientError> = std::result::Result<T, E>;
 

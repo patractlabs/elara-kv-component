@@ -3,31 +3,23 @@ use lazy_static::lazy_static;
 
 use elara_kv_component::config::*;
 use elara_kv_component::error::Result;
-use elara_kv_component::kafka::{KVSubscriber, KvConsumer, LogLevel, OwnedMessage};
-use elara_kv_component::message::{Output, Response, Success, ResponseErrorMessage};
-use elara_kv_component::websocket::{collect_subscribed_storage, WsConnection, WsServer};
-
-use elara_kv_component::client::WsClient;
-use futures::{SinkExt, StreamExt};
+use elara_kv_component::rpc_client::RpcClient;
+use futures::StreamExt;
 use log::*;
-use rdkafka::Message as KafkaMessage;
 use std::sync::Arc;
 use tokio::sync::broadcast::Receiver;
 use tokio_tungstenite::tungstenite;
 use tungstenite::{Error, Message};
 
+use elara_kv_component::polkadot;
+use elara_kv_component::rpc_client;
+use elara_kv_component::websocket::{WsConnection, WsConnections, WsServer};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use tokio::sync::Mutex;
+use tokio::time::Duration;
 
-// lazy_static! {
-//     static ref HASHMAP: HashMap<&'static String, > = {
-//         let mut m = HashMap::new();
-//         m.insert(0, "foo");
-//         m.insert(1, "bar");
-//         m.insert(2, "baz");
-//         m
-//     };
-// }
+type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -42,15 +34,6 @@ async fn main() -> Result<()> {
     let cfg = cfg.validate().expect("Config is illegal");
 
     debug!("Load config: {:#?}", &cfg);
-    let consumer = KvConsumer::new(cfg.kafka.config.into_iter(), LogLevel::Debug);
-
-    let topics: Vec<&str> = cfg.kafka.topics.iter().map(|s| s.as_str()).collect();
-    info!("Subscribing kafka topic: {:?}", &topics);
-    consumer.subscribe(&*topics)?;
-
-    let subscriber = Arc::new(KVSubscriber::new(Arc::new(consumer), 100));
-    // start subscribing some topics
-    subscriber.start();
 
     let addr = cfg.ws.addr.as_str();
     let server = WsServer::bind(addr)
@@ -58,38 +41,25 @@ async fn main() -> Result<()> {
         .expect(&*format!("Cannot listen {}", addr));
     info!("Started ws server at {}", addr);
 
-    let mut clients: WsClients = Default::default();
     // started to subscribe chain node by ws client
-    for (node, cfg) in cfg.nodes.iter() {
-        let mut client = WsClient::connect(cfg.addr.clone())
-            .await
-            .expect(&format!("Cannot connect to {:?}", node));
+    let mut connections = WsConnections::new();
+    tokio::spawn(remove_expired_connections(connections.clone()));
 
-        let mut receiver = client.receiver();
-
-        use tokio::sync::broadcast::error::RecvError;
-        tokio::spawn(async move {
-            loop {
-                let resp = receiver.recv().await;
-
-                match resp {
-                    Err(RecvError::Closed) => return,
-                    Err(RecvError::Lagged(_)) => {}
-                    Ok(resp) => {
-                        info!("{:?}", resp);
-                    }
-                }
-            }
-        });
-
-        clients.insert(node.to_string(), Arc::new(Mutex::new(client)));
-    }
+    // TODO: impl the logic of re-connection
+    let clients = create_clients(&cfg, connections.clone())
+        .await
+        .expect("Cannot subscribe node");
 
     // accept a new connection
     loop {
-        match server.accept().await {
+        match server.accept(cfg.clone()).await {
             Ok(connection) => {
-                handle_connection(connection, subscriber.clone());
+                connections.add(connection.clone()).await;
+
+                info!("New WebSocket connection: {}", connection.addr());
+                info!("Total connection num: {}", connections.len().await);
+
+                tokio::spawn(handle_connection(connection));
             }
             Err(err) => {
                 warn!("Error occurred when accept a new connection: {}", err);
@@ -98,106 +68,59 @@ async fn main() -> Result<()> {
     }
 }
 
-type WsClients = HashMap<String, Arc<Mutex<WsClient>>>;
-
-fn handle_connection(
-    connection: WsConnection,
-    subscriber: Arc<KVSubscriber>,
-    clients: WsClients,
-) {
-    info!("New WebSocket connection: {}", connection.addr);
-    tokio::spawn(handle_request(connection.clone(), subscriber));
-}
-
-// push subscription data for the connection
-async fn start_kafka_subscription_push(
-    connection: WsConnection,
-    mut kafka_receiver: Receiver<OwnedMessage>,
-) {
-    // receive kafka message in background and send them if possible
-    info!(
-        "Started to subscribe kafka data for peer: {}",
-        connection.addr
-    );
-    // TODO: handle different topic and key
-    while let Ok(msg) = kafka_receiver.recv().await {
-        if Arc::strong_count(&connection.sender) <= 1 {
-            break;
-        }
-
-        debug!("Receive a message: {:?}", &msg);
-
-        if msg.payload().is_none() {
-            warn!("Receive a kafka message whose payload is empty: {:?}", msg);
-            continue;
-        }
-
-        match msg.topic() {
-            // TODO: extract them as a trait
-            "polkadot" | "kusama" => match msg.key() {
-                Some(b"storage") => {
-                    handle_kafka_storage(&connection, msg).await;
-                }
-
-                // TODO:
-                Some(other) => {
-                    warn!(
-                        "Receive a message with key: `{}`",
-                        String::from_utf8(other.to_vec()).expect("")
-                    );
-                }
-
-                None => {
-                    warn!("Receive a message without a key: {:?}", msg);
-                }
-            },
-            // TODO:
-            other => {
-                warn!("Receive a message with topic: {:?}", other);
+// we remove unlived connection every 5s
+async fn remove_expired_connections(mut conns: WsConnections) {
+    loop {
+        let mut expired = vec![];
+        for (addr, conn) in conns.inner().read().await.iter() {
+            if conn.closed() {
+                expired.push(addr.clone());
             }
         }
-    }
 
-    debug!("start_pushing_service return");
-}
-
-// TODO: refine these handles
-async fn handle_kafka_storage(connection: &WsConnection, msg: OwnedMessage) {
-    let storage_sessions = connection.storage_sessions.clone();
-    let storage_sessions = storage_sessions.read().await;
-    let res = collect_subscribed_storage(&storage_sessions, msg);
-    let msgs = match res {
-        Err(ref err) => {
-            warn!(
-                "Error occurred when collect data according to subscription params: {:?}",
-                err
-            );
-            return;
+        for addr in expired {
+            conns.remove(&addr).await;
+            info!("Removed a expired connection: {}", addr);
+            info!("Total connection num: {}", conns.len().await);
         }
 
-        Ok(msgs) => msgs,
-    };
-
-    let mut sender = connection.sender.lock().await;
-    for msg in msgs.iter() {
-        let msg = serde_json::to_string(msg).expect("serialize subscription data");
-        let res = sender.feed(Message::Text(msg)).await;
-        // TODO: refine it. We need to exit if connection is closed
-        if let Err(Error::ConnectionClosed) = res {
-            return;
-        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
-    // TODO: need to handle ?
-    let _res = sender.flush().await;
 }
 
-async fn handle_request(connection: WsConnection, subscriber: Arc<KVSubscriber>) {
-    let mut receiver = connection.receiver.lock().await;
+async fn create_clients(
+    cfg: &Config,
+    connections: WsConnections,
+) -> rpc_client::Result<WsClients> {
+    let mut clients: WsClients = Default::default();
+    // started to subscribe chain node by ws client
+    for (node, cfg) in cfg.nodes.iter() {
+        let client = RpcClient::new(cfg.addr.clone())
+            .await
+            .expect(&format!("Cannot connect to {}: {}", node, cfg.addr));
+
+        match node.as_str() {
+            polkadot::consts::NODE_NAME => {
+                let polkadot_stream =
+                    polkadot::rpc_client::start_polkadot_subscribe(&client).await?;
+                polkadot_stream.start(connections.clone())
+            }
+
+            _ => unimplemented!(),
+        }
+        clients.insert(node.to_string(), Arc::new(Mutex::new(client)));
+    }
+
+    Ok(clients)
+}
+
+async fn handle_connection(connection: WsConnection) {
+    let receiver = connection.receiver();
+    let mut receiver = receiver.lock().await;
     loop {
         let msg = receiver.next().await;
         match msg {
             Some(Ok(msg)) => {
-                let mut sender = connection.sender.lock().await;
                 if msg.is_empty() {
                     continue;
                 }
@@ -213,28 +136,21 @@ async fn handle_request(connection: WsConnection, subscriber: Arc<KVSubscriber>)
 
                     Message::Ping(_) => {
                         // TODO: need we to handle this?
-                        let _res = sender.send(Message::Pong(b"pong".to_vec())).await;
+                        let _res = connection
+                            .send_message(Message::Pong(b"pong".to_vec()))
+                            .await;
                     }
 
                     Message::Text(s) => {
                         let res = connection.handle_message(s).await;
                         match res {
-                            Ok(res) => {
-                                let _res = sender.send(Message::Text(res)).await;
-
-                                // TODO: remove kafka
-                                // tokio::spawn(start_kafka_subscription_push(
-                                //     connection.clone(),
-                                //     subscriber.subscribe(),
-                                // ));
-                            }
+                            Ok(()) => {}
                             Err(err) => {
-                                let err = serde_json::to_string(
-                                    &ResponseErrorMessage::from(err),
-                                )
-                                .expect("serialize a error response message");
-                                // TODO: need we to handle this?
-                                let _res = sender.send(Message::Text(err)).await;
+                                warn!(
+                                    "Error occurred when send response to peer `{}`: {}",
+                                    connection.addr(),
+                                    err
+                                );
                             }
                         };
                     }
@@ -245,18 +161,21 @@ async fn handle_request(connection: WsConnection, subscriber: Arc<KVSubscriber>)
             Some(Err(Error::ConnectionClosed)) | None => break,
 
             Some(Err(err)) => {
-                warn!("{}", err);
+                warn!("Err {}", err);
             }
         }
     }
 
-    match connection.sender.lock().await.close().await {
+    match connection.close().await {
         Ok(()) => {}
         Err(err) => {
             warn!(
                 "Error occurred when closed connection to {}: {}",
-                connection.addr, err
+                connection.addr(),
+                err,
             );
         }
     };
+
+    info!("Closed connection to peer {}", connection.addr());
 }

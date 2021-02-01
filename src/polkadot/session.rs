@@ -1,4 +1,3 @@
-use crate::message::{SubscribedData, SubscribedMessage, SubscribedParams, Version};
 use crate::polkadot::rpc_api::state::StateStorage;
 use crate::polkadot::rpc_api::SubscribedResult;
 use crate::session::{NoParamSession, NoParamSessions, Session, Sessions};

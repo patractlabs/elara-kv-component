@@ -142,13 +142,13 @@ pub fn serialize_elara_api<T>(session: &Session, data: &T) -> String
 where
     T: Serialize,
 {
-    let data = serde_json::to_string(&data).expect("serialize a subscribed data");
+    let data = serde_json::to_string(&data).expect("serialize a substrate jsonrpc");
     let msg = SubscribedMessage {
         id: session.client_id.clone(),
         chain: session.chain_name.clone(),
         data,
     };
-    serde_json::to_string(&msg).expect("serialize a subscribed data")
+    serde_json::to_string(&msg).expect("serialize a elara api")
 }
 
 #[cfg(test)]

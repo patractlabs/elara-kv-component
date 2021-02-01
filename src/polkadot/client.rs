@@ -2,25 +2,35 @@
 //! Set sessions according to user's subscription request
 
 use super::session::{StorageKeys, StorageSessions};
-use crate::message::{Error, MethodCall, Params, Success, Value, Version};
+use crate::message::{
+    serialize_elara_api, Error, MethodCall, Params, Success, Value, Version,
+};
 use crate::polkadot::consts;
 use crate::polkadot::session::{
     AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
-    WatchExtrinsicSessions,
+    StorageSession, WatchExtrinsicSessions,
 };
 use crate::session::ISessions;
 use crate::session::{NoParamSessions, Session, Sessions};
 use crate::websocket::WsConnection;
 
+use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::RwLock;
+use tokio_tungstenite::tungstenite::Message;
 
-// Note: we need the session to handle the METHOD call
+// TODO: extract them to common mod.
+
+// Note: we need the session to handle the method call
 pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
 pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
 
 pub type MethodSenders = HashMap<&'static str, MethodSender>;
 pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
+
+type HandlerFn<S> = fn(&mut S, Session, MethodCall) -> Result<Success, Error>;
 
 pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
     let mut receivers = HashMap::new();
@@ -44,48 +54,147 @@ pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
     (senders, receivers)
 }
 
-// we start to spawn handler task in background to response subscription METHOD
-async fn handle_subscribe_response_background(
-    conn: WsConnection,
-    receivers: MethodReceivers,
-) {
+// we start to spawn handler task in background to response for every subscription
+pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodReceivers) {
     for (method, mut receiver) in receivers.into_iter() {
         let conn = conn.clone();
 
-        let task = match method {
+        match method {
             consts::state_subscribeStorage => {
-                async move {
-                    while let Some((session, request)) = receiver.recv().await {
-                        // TODO:
-                    }
-                }
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.storage_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_state_subscribeStorage,
+                ));
+            }
+            consts::state_unsubscribeStorage => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.storage_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_state_unsubscribeStorage,
+                ));
             }
 
-            _ => {
-                // TODO:
-                unimplemented!()
+            consts::state_subscribeRuntimeVersion => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.runtime_version_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_state_subscribeRuntimeVersion,
+                ));
             }
+            consts::state_unsubscribeRuntimeVersion => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.runtime_version_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_state_unsubscribeRuntimeVersion,
+                ));
+            }
+
+            consts::chain_subscribeNewHeads => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.new_head_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_chain_subscribeNewHeads,
+                ));
+            }
+            consts::chain_unsubscribeNewHeads => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.new_head_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_chain_unsubscribeNewHeads,
+                ));
+            }
+
+            consts::chain_subscribeAllHeads => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.all_head_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_chain_subscribeNewHeads,
+                ));
+            }
+            consts::chain_unsubscribeAllHeads => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.all_head_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_chain_unsubscribeNewHeads,
+                ));
+            }
+
+            consts::chain_subscribeFinalizedHeads => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.finalized_head_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_chain_subscribeNewHeads,
+                ));
+            }
+            consts::chain_unsubscribeFinalizedHeads => {
+                tokio::spawn(start_handle(
+                    conn.polkadot_sessions.finalized_head_sessions.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_chain_unsubscribeNewHeads,
+                ));
+            }
+
+            _ => {}
         };
-        // TODO:
-        tokio::spawn(task);
+    }
+}
+
+
+// according to different message to handle subscription
+async fn start_handle<SessionItem, S: ISessions<SessionItem>>(
+    sessions: Arc<RwLock<S>>,
+    conn: WsConnection,
+    mut receiver: MethodReceiver,
+    handle: HandlerFn<S>,
+) {
+    while let Some((session, request)) = receiver.recv().await {
+        let mut sessions = sessions.write().await;
+        let res = handle(sessions.borrow_mut(), session.clone(), request);
+
+        let res = res
+            .map(|success| serialize_elara_api(&session, &success))
+            .map_err(|err| serialize_elara_api(&session, &err));
+        let msg = match res {
+            Ok(s) => s,
+            Err(s) => s,
+        };
+        conn.send_message(Message::Text(msg));
     }
 }
 
 // TODO: refine these as a trait
-
-pub trait ApiHandler<'a> {
-    const METHOD: &'static str;
-    fn handle(
-        &'a mut self,
-        session: Session,
-        request: MethodCall,
-    ) -> Result<Success, Error>;
-}
-
-pub struct StorageHandler<'a> {
-    pub sessions: &'a mut StorageSessions,
-    pub session: Session,
-}
+//
+// #[async_trait]
+// pub trait ApiHandler<'a> {
+//     const METHOD: &'static str;
+//     async fn handle(
+//         &'a mut self,
+//         session: Session,
+//         request: MethodCall,
+//     ) -> Result<Success, Error>;
+// }
+//
+// impl<'a> ApiHandler<'a> for SubscribeStorageHandler {
+//     const METHOD: &'static str = "state_subscribeStorage";
+//
+//     async fn handle(&'a mut self, session: Session, request: MethodCall) -> Result<Success<Value>, Error> {
+//     }
+// }
+//
+// pub struct SubscribeStorageHandler<'a> {
+//     sessions: &'a mut StorageSessions,
+// }
 
 // TODO: we should remove the watch when the connection closed
 #[allow(non_snake_case)]

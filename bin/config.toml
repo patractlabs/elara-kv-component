@@ -11,5 +11,5 @@ topics = ["polkadot", "kusama"]
 [ws]
 addr = "localhost:9002"
 
-[nodes.polkadot1]
+[nodes.polkadot]
 addr = "wss://rpc.polkadot.io"

@@ -1,14 +1,11 @@
 use crate::config::{Config, NodeConfig};
 use crate::error::{Result, ServiceError};
-use crate::message::{
-    Failure, Id, MethodCall, RequestMessage, ResponseMessage, SubscribedData,
-    SubscribedMessage, SubscribedParams, Success, Version,
-};
+use crate::message::{Failure, MethodCall, RequestMessage, Success, Version};
 use crate::polkadot::client;
 use crate::polkadot::client::{
-    polkadot_channel, MethodReceiver, MethodReceivers, MethodSender, MethodSenders,
+    handle_polkadot_response, polkadot_channel, MethodReceiver, MethodReceivers,
+    MethodSender, MethodSenders,
 };
-use crate::polkadot::rpc_api::state::*;
 use crate::polkadot::rpc_api::SubscribedResult;
 use crate::polkadot::session::PolkadotSessions;
 use crate::session::Session;
@@ -19,6 +16,7 @@ use log::*;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::ops::DerefMut;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::sync::{Mutex, RwLock};
@@ -34,15 +32,68 @@ pub struct WsServer {
 /// WsConnection maintains state. When WsServer accept a new connection, a WsConnection will be returned.
 #[derive(Debug, Clone)]
 pub struct WsConnection {
+    closed: Arc<AtomicBool>,
     cfg: Config,
     addr: SocketAddr,
     sender: Arc<Mutex<WsSender>>,
     receiver: Arc<Mutex<WsReceiver>>,
     polkadot_method_senders: MethodSenders,
+    /// Polkadot related sessions
     pub polkadot_sessions: PolkadotSessions,
 }
 
-// TODO: 增加一个API，在连接刚启动的时候指定这个连接可以订阅哪些节点
+#[derive(Debug, Clone)]
+pub struct WsConnections {
+    inner: Arc<RwLock<HashMap<SocketAddr, WsConnection>>>,
+}
+
+impl WsConnections {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// add an alive connection to pool
+    pub async fn add(&mut self, conn: WsConnection) {
+        if conn.closed() {
+            return;
+        }
+        let mut map = self.inner.write().await;
+        let expired = map.insert(conn.addr(), conn);
+        Self::close_conn(expired).await
+    }
+
+    async fn close_conn(conn: Option<WsConnection>) {
+        match conn {
+            Some(conn) => {
+                conn.close().await;
+            }
+            None => {}
+        };
+    }
+
+    pub async fn remove(&mut self, addr: &SocketAddr) {
+        let mut map = self.inner.write().await;
+        let expired = map.remove(addr);
+        Self::close_conn(expired).await
+    }
+
+    #[inline]
+    pub fn inner(&self) -> Arc<RwLock<HashMap<SocketAddr, WsConnection>>> {
+        self.inner.clone()
+    }
+
+    pub async fn len(&self) -> usize {
+        self.inner.read().await.len()
+    }
+}
+
+impl Default for WsConnections {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(Default::default())),
+        }
+    }
+}
 
 pub type WsSender = SplitSink<WebSocketStream<TcpStream>, Message>;
 pub type WsReceiver = SplitStream<WebSocketStream<TcpStream>>;
@@ -70,47 +121,67 @@ impl WsServer {
 
         // TODO: add node switch
         let (polkadot_method_senders, polkadot_method_receivers) = polkadot_channel();
-
-        Ok(WsConnection {
+        let conn = WsConnection {
+            closed: Default::default(),
             cfg,
             addr,
             sender: Arc::new(Mutex::new(sender)),
             receiver: Arc::new(Mutex::new(receiver)),
             polkadot_sessions: Default::default(),
             polkadot_method_senders,
-        })
-    }
-}
+        };
 
-async fn handle_state_subscribeStorage(
-    ws_sender: Arc<Mutex<WsSender>>,
-    sessions: PolkadotSessions,
-    mut receiver: MethodReceiver,
-) {
-    while let Some((session, request)) = receiver.recv().await {
-        let mut sessions = sessions.storage_sessions.write().await;
-        client::handle_state_subscribeStorage(sessions.deref_mut(), session, request);
+        tokio::spawn(handle_polkadot_response(
+            conn.clone(),
+            polkadot_method_receivers,
+        ));
 
-        let _sender = ws_sender.lock().await;
+        Ok(conn)
     }
 }
 
 impl WsConnection {
+    #[inline]
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
 
+    #[inline]
+    pub fn receiver(&self) -> Arc<Mutex<WsReceiver>> {
+        self.receiver.clone()
+    }
+
+    #[inline]
+    pub fn closed(&self) -> bool {
+        self.closed.load(Ordering::Relaxed)
+    }
+
+    pub async fn close(&self) -> Result<()> {
+        if self.closed() {
+            return Ok(());
+        }
+        let mut sender = self.sender.lock().await;
+        self.closed.store(true, Ordering::Relaxed);
+        sender.close().await.map_err(ServiceError::WsServerError)
+    }
+
     pub async fn send_message(&self, msg: Message) -> Result<()> {
+        if self.closed() {
+            return Ok(());
+        }
         let res = self.sender.lock().await.send(msg).await;
-        res.map_err(ServiceError::WsClientError)
+        res.map_err(ServiceError::WsServerError)
     }
 
     pub async fn send_messages(&self, msgs: Vec<Message>) -> Result<()> {
+        if self.closed() {
+            return Ok(());
+        }
         let mut sender = self.sender.lock().await;
         for msg in msgs.into_iter() {
             sender.feed(msg).await?;
         }
-        sender.flush().await.map_err(ServiceError::WsClientError)
+        sender.flush().await.map_err(ServiceError::WsServerError)
     }
 
     // when result is ok, it means to send it to corresponding subscription channel to handle it.
@@ -132,6 +203,7 @@ impl WsConnection {
             .map_err(|err| {
                 serde_json::to_string(&err).expect("serialize a failure message")
             })?;
+
 
         // handle different chain node
         match msg.chain.as_str() {
@@ -163,13 +235,14 @@ impl WsConnection {
         let method = request.method.clone();
         let res = sender.send((session, request));
         if res.is_err() {
-            warn!("sender about `{}` is closed", method);
+            warn!("sender channel `{}` is closed", method);
         }
 
         Ok(())
     }
 
-    // send successful response in other channel handler
+    /// Send successful response in other channel handler.
+    /// The error result represents error occurred when send response
     pub async fn handle_message(&self, msg: impl Into<String>) -> Result<()> {
         let res = self._handle_message(msg);
         match res {

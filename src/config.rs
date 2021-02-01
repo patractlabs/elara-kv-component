@@ -46,12 +46,12 @@ impl Config {
 
         if !invalid_nodes.is_empty() {
             Err(Error::Custom(format!(
-                "Some nodes are invalid: {:?}",
+                "Some chain nodes are invalid: {:?}",
                 invalid_nodes
             )))
         } else if self.nodes.is_empty() {
             Err(Error::Custom(
-                "nodes config at least need one node".to_string(),
+                "chain nodes config at least need one node".to_string(),
             ))
         } else {
             Ok(self)

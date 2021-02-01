@@ -11,7 +11,6 @@ pub struct ChainHead {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(transparent)]
 pub struct DigestLogs {
     logs: Vec<String>,
 }
