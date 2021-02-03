@@ -140,19 +140,6 @@ impl WsServer {
             chain_handlers: Default::default(),
             sessions: Default::default(),
         };
-
-        // handle_subscription_response(
-        //     conn.clone(),
-        //     conn.polkadot_sessions.clone(),
-        //     polkadot_method_receivers,
-        // );
-        //
-        // handle_subscription_response(
-        //     conn.clone(),
-        //     conn.polkadot_sessions.clone(),
-        //     kusama_method_receivers,
-        // );
-
         Ok(conn)
     }
 }
@@ -241,13 +228,6 @@ impl WsConnection {
                 serde_json::to_string(&err).expect("serialize a failure message")
             })?;
 
-        // handle different chain node
-        // match msg.chain.as_str() {
-        //     crate::polkadot::NODE_NAME => self._handle_polkadot_message(session, request),
-        //     _ => Err(ServiceError::ChainNotSupport(msg.chain.clone()))
-        //         .map_err(|err| err.to_string()),
-        // };
-
         let chain_handlers = self.chain_handlers.read().await;
 
         let handler = chain_handlers.get(msg.chain.as_str());
@@ -268,32 +248,6 @@ impl WsConnection {
             .await
             .insert(chain_name, Box::new(handler));
     }
-
-    // fn _handle_polkadot_message(
-    //     &self,
-    //     session: Session,
-    //     request: MethodCall,
-    // ) -> std::result::Result<(), String> {
-    //     let sender = self
-    //         .polkadot_method_senders
-    //         .get(request.method.as_str())
-    //         .ok_or(Failure {
-    //             jsonrpc: Version::V2_0,
-    //             error: jsonrpc_types::Error::method_not_found(),
-    //             id: Some(request.id.clone()),
-    //         })
-    //         .map_err(|err| {
-    //             serde_json::to_string(&err).expect("serialize a failure message")
-    //         })?;
-    //
-    //     let method = request.method.clone();
-    //     let res = sender.send((session, request));
-    //     if res.is_err() {
-    //         warn!("sender channel `{}` is closed", method);
-    //     }
-    //
-    //     Ok(())
-    // }
 
     /// Send successful response in other channel handler.
     /// The error result represents error occurred when send response
