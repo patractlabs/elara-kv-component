@@ -32,7 +32,10 @@ impl Config {
             .iter()
             .filter(|(k, _v)| {
                 let k = k.as_str();
-                !(k == "polkadot" || k == "kusama")
+                match k {
+                    crate::polkadot::NODE_NAME | crate::kusama::NODE_NAME => false,
+                    _ => true,
+                }
             })
             .collect::<HashMap<_, _>>();
 

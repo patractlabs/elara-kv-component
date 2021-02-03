@@ -1,11 +1,11 @@
-use crate::session::{NoParamSession, NoParamSessions, Session, Sessions};
+use crate::session::{ISession, NoParamSession, NoParamSessions, Session, Sessions};
 
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Default)]
-pub struct PolkadotSessions {
+pub struct SubscriptionSessions {
     pub storage_sessions: Arc<RwLock<StorageSessions>>,
     pub runtime_version_sessions: Arc<RwLock<RuntimeVersionSessions>>,
     pub all_head_sessions: Arc<RwLock<AllHeadSessions>>,
@@ -27,6 +27,16 @@ pub type RuntimeVersionSession = NoParamSession;
 pub type RuntimeVersionSessions = NoParamSessions;
 
 pub type StorageSession = (Session, StorageKeys<HashSet<String>>);
+
+impl ISession for StorageSession {
+    fn chain_name(&self) -> String {
+        self.0.chain_name()
+    }
+
+    fn client_id(&self) -> String {
+        self.0.client_id()
+    }
+}
 pub type StorageSessions = Sessions<StorageSession>;
 
 pub type WatchExtrinsicSession = (Session, String);

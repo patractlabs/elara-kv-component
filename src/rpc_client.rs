@@ -9,13 +9,19 @@ pub type Result<T, E = RpcClientError> = std::result::Result<T, E>;
 pub struct RpcClient {
     ws: WsTransport,
     node: String,
+    addr: String,
 }
 
 impl RpcClient {
     pub async fn new(node: String, addr: impl Into<String>) -> Result<Self> {
-        let ws = WsTransport::new(addr.into().as_str()).await?;
+        let addr = addr.into();
+        let ws = WsTransport::new(addr.as_str()).await?;
 
-        Ok(Self { node, ws })
+        Ok(Self { node, ws, addr })
+    }
+
+    pub fn addr(&self) -> String {
+        self.addr.clone()
     }
 
     pub fn node_name(&self) -> String {

@@ -1,5 +1,5 @@
 use crate::error::ServiceError;
-use crate::session::Session;
+use crate::session::ISession;
 
 pub use jsonrpc_types::{
     Call, Error, Failure, Id, MethodCall, Output, Params, SubscriptionNotification,
@@ -133,14 +133,15 @@ impl_from_num!(u16);
 impl_from_num!(u32);
 impl_from_num!(u64);
 
-pub fn serialize_elara_api<T>(session: &Session, data: &T) -> String
+pub fn serialize_elara_api<T, S>(session: &S, data: &T) -> String
 where
     T: Serialize,
+    S: ISession,
 {
     let data = serde_json::to_string(&data).expect("serialize a substrate jsonrpc");
     let msg = SubscribedMessage {
-        id: session.client_id.clone(),
-        chain: session.chain_name.clone(),
+        id: session.client_id(),
+        chain: session.chain_name(),
         data,
     };
     serde_json::to_string(&msg).expect("serialize a elara api")
@@ -195,7 +196,6 @@ mod tests {
 "#;
 
         let v: SubscribedMessage = serde_json::from_str(msg)?;
-        dbg!(&v.data);
         let _v: SubscriptionNotification = serde_json::from_str(&*v.data)?;
 
         Ok(())
