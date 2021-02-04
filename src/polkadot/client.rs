@@ -17,6 +17,7 @@ use crate::websocket::{MessageHandler, WsConnection};
 use log::warn;
 use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
@@ -97,33 +98,6 @@ pub fn method_channel() -> (MethodSenders, MethodReceivers) {
         receivers.insert(method, receiver);
     }
     (senders, receivers)
-}
-
-/// If not match method it return error string.
-/// If matched, it return () and send to the receiver to handle it.
-pub fn handle_subscription_request(
-    senders: MethodSenders,
-    session: Session,
-    request: MethodCall,
-) -> std::result::Result<(), String> {
-    let sender = senders
-        .get(request.method.as_str())
-        .ok_or(Failure {
-            jsonrpc: Version::V2_0,
-            error: jsonrpc_types::Error::method_not_found(),
-            id: Some(request.id.clone()),
-        })
-        .map_err(|err| {
-            serde_json::to_string(&err).expect("serialize a failure message")
-        })?;
-
-    let method = request.method.clone();
-    let res = sender.send((session, request));
-    if res.is_err() {
-        warn!("sender channel `{}` is closed", method);
-    }
-
-    Ok(())
 }
 
 /// Start to spawn handler task about subscription jsonrpc in background to response for every subscription.
@@ -226,25 +200,30 @@ pub fn handle_subscription_response(
 }
 
 // according to different message to handle different subscription
-async fn start_handle<SessionItem, S: ISessions<SessionItem>>(
+async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
     sessions: Arc<RwLock<S>>,
     conn: WsConnection,
     mut receiver: MethodReceiver,
     handle: HandlerFn<S>,
 ) {
     while let Some((session, request)) = receiver.recv().await {
-        let mut sessions = sessions.write().await;
-        let res = handle(sessions.borrow_mut(), session.clone(), request);
+        loop {
+            // We try to lock it instead of keeping it locked.
+            // Because the lock time may be longer.
+            let mut sessions = sessions.write().await;
+            let res = handle(sessions.borrow_mut(), session.clone(), request);
 
-        let res = res
-            .map(|success| serialize_elara_api(&session, &success))
-            .map_err(|err| serialize_elara_api(&session, &err));
-        let msg = match res {
-            Ok(s) => s,
-            Err(s) => s,
-        };
+            let res = res
+                .map(|success| serialize_elara_api(&session, &success))
+                .map_err(|err| serialize_elara_api(&session, &err));
+            let msg = match res {
+                Ok(s) => s,
+                Err(s) => s,
+            };
 
-        let _res = conn.send_message(Message::Text(msg)).await;
+            let _res = conn.send_message(Message::Text(msg)).await;
+            break;
+        }
     }
 }
 

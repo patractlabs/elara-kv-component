@@ -74,19 +74,19 @@ impl WsConnections {
         }
         let mut map = self.inner.write().await;
         let expired = map.insert(conn.addr(), conn);
-        Self::close_conn(expired).await
+        Self::close_conn(expired);
     }
 
-    async fn close_conn(conn: Option<WsConnection>) {
+    fn close_conn(conn: Option<WsConnection>) {
         if let Some(conn) = conn {
-            let _ = conn.close().await;
+            conn.close();
         }
     }
     /// remove an alive connection from pool and close it
     pub async fn remove(&mut self, addr: &SocketAddr) {
         let mut map = self.inner.write().await;
         let expired = map.remove(addr);
-        Self::close_conn(expired).await
+        Self::close_conn(expired);
     }
 
     #[inline]
@@ -159,51 +159,41 @@ impl WsConnection {
 
     #[inline]
     pub fn closed(&self) -> bool {
-        self.closed.load(Ordering::Relaxed)
+        let b = self.closed.load(Ordering::SeqCst);
+        b
     }
 
-    pub async fn close(&self) -> Result<()> {
+    pub fn close(&self) {
+        if self.closed() {
+            return;
+        }
+        self.closed.store(true, Ordering::SeqCst);
+    }
+
+    pub async fn send_close(&self) -> tungstenite::Result<()> {
         if self.closed() {
             return Ok(());
         }
-        let mut sender = self.sender.lock().await;
-        self.closed.store(true, Ordering::Relaxed);
-        sender.close().await.map_err(ServiceError::WsServerError)
-    }
-
-    pub async fn send_close(&self) -> Result<()> {
-        if self.closed() {
-            return Ok(());
-        }
-        let res = self
-            .sender
+        self.sender
             .lock()
             .await
             .send(Message::Close(Some(CloseFrame {
                 code: CloseCode::Normal,
                 reason: Default::default(),
             })))
-            .await;
-        res.map_err(ServiceError::WsServerError)
+            .await
     }
 
-    pub async fn send_message(&self, msg: Message) -> Result<()> {
-        if self.closed() {
-            return Ok(());
-        }
-        let res = self.sender.lock().await.send(msg).await;
-        res.map_err(ServiceError::WsServerError)
+    pub async fn send_message(&self, msg: Message) -> tungstenite::Result<()> {
+        self.sender.lock().await.send(msg).await
     }
 
-    pub async fn send_messages(&self, msgs: Vec<Message>) -> Result<()> {
-        if self.closed() {
-            return Ok(());
-        }
+    pub async fn send_messages(&self, msgs: Vec<Message>) -> tungstenite::Result<()> {
         let mut sender = self.sender.lock().await;
         for msg in msgs.into_iter() {
             sender.feed(msg).await?;
         }
-        sender.flush().await.map_err(ServiceError::WsServerError)
+        sender.flush().await
     }
 
     // when result is ok, it means to send it to corresponding subscription channel to handle it.
@@ -252,7 +242,10 @@ impl WsConnection {
 
     /// Send successful response in other channel handler.
     /// The error result represents error occurred when send response
-    pub async fn handle_message(&self, msg: impl Into<String>) -> Result<()> {
+    pub async fn handle_message(
+        &self,
+        msg: impl Into<String>,
+    ) -> tungstenite::Result<()> {
         let res = self._handle_message(msg).await;
         match res {
             // send no rpc error response in here

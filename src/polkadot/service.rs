@@ -19,6 +19,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio_tungstenite::tungstenite::error::Error;
 use tokio_tungstenite::tungstenite::Message;
 
 /// According to some states or sessions, we transform some data from chain node to new suitable values.
@@ -165,18 +166,21 @@ impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
     }
 }
 
-fn send_message(conn: WsConnection, msg: String, data_type: &'static str) {
-    tokio::spawn(async move {
-        let res = conn.send_message(Message::Text(msg)).await;
-        if let Err(err) = res {
-            warn!(
-                "Error occurred when send {} data to peer `{}`: {:?}",
-                data_type,
-                conn.addr(),
-                err
-            );
+async fn send_message(conn: WsConnection, msg: String, data_type: &'static str) {
+    let res = conn.send_message(Message::Text(msg)).await;
+    // we need to cleanup unlived conn outside
+    if let Err(err) = res {
+        if let Error::ConnectionClosed = err {
+            conn.close();
         }
-    });
+
+        warn!(
+            "Error occurred when send {} data to peer `{}`: {:?}",
+            data_type,
+            conn.addr(),
+            err
+        );
+    };
 }
 
 // The followings are used to send subscription data to users
@@ -194,7 +198,7 @@ async fn send_subscription_data<ST, Session, Input>(
         let data = ST::transform(session, subscription_id.clone().into(), data.clone());
         // two level json
         let msg = serialize_elara_api(session, &data);
-        send_message(conn.clone(), msg, ST::METHOD);
+        send_message(conn.clone(), msg, ST::METHOD).await;
     }
 }
 
