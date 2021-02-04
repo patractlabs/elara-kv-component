@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     tokio::spawn(remove_expired_connections(connections.clone()));
 
     // TODO: impl the logic of re-connection
-    let clients = create_clients(&cfg, connections.clone())
+    let _clients = create_clients(&cfg, connections.clone())
         .await
         .expect("Cannot subscribe node");
 
@@ -76,7 +76,7 @@ async fn remove_expired_connections(mut conns: WsConnections) {
         let mut expired = vec![];
         for (addr, conn) in conns.inner().read().await.iter() {
             if conn.closed() {
-                expired.push(addr.clone());
+                expired.push(*addr);
             }
         }
 
@@ -99,7 +99,7 @@ async fn create_clients(
     for (node, cfg) in cfg.nodes.iter() {
         let client = RpcClient::new(node.clone(), cfg.addr.clone())
             .await
-            .expect(&format!("Cannot connect to {}: {}", node, cfg.addr));
+            .unwrap_or_else(|_| panic!("Cannot connect to {}: {}", node, cfg.addr));
 
         match node.as_str() {
             polkadot::NODE_NAME => subscribe_polkadot(connections.clone(), &client).await,

@@ -94,7 +94,7 @@ impl From<String> for SubscriptionId {
 impl From<Id> for SubscriptionId {
     fn from(id: Id) -> Self {
         match id {
-            Id::Num(val) => SubscriptionId::Number(val.into()),
+            Id::Num(val) => SubscriptionId::Number(val),
             Id::Str(val) => SubscriptionId::String(val),
         }
     }
@@ -103,7 +103,7 @@ impl From<Id> for SubscriptionId {
 impl From<SubscriptionId> for Id {
     fn from(sub: SubscriptionId) -> Self {
         match sub {
-            SubscriptionId::Number(val) => Id::Num(val.into()),
+            SubscriptionId::Number(val) => Id::Num(val),
             SubscriptionId::String(val) => Id::Str(val),
         }
     }

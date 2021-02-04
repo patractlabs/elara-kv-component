@@ -39,7 +39,7 @@ impl RequestHandler {
         let (senders, receivers) = method_channel();
         handle_subscription_response(
             conn.clone(),
-            conn.sessions.polkadot_sessions.clone(),
+            conn.sessions.polkadot_sessions,
             receivers,
         );
         Self { senders }

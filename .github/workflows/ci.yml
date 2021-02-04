@@ -1,6 +1,14 @@
 name: elara-kv
 
-on: [push, pull_request]
+on:
+    # Trigger the workflow on push or pull request,
+    # but only for the main branch
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
 
 env:
   CARGO_TERM_COLOR: always
@@ -10,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust-version: [ stable, nightly ]
+        rust-version: [ stable ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1

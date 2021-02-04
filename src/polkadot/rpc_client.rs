@@ -176,7 +176,7 @@ impl SubscribedStream {
         {
             tokio::spawn(send_messages_to_conns(
                 finalized_head,
-                conns.clone(),
+                conns,
                 move |conn, data| {
                     match serde_json::value::from_value(data.params.result.clone()) {
                         Ok(data) => send_chain_finalized_head(
