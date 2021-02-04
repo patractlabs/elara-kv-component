@@ -1,7 +1,5 @@
 #![allow(non_upper_case_globals)]
 
-pub const NODE_NAME: &str = "polkadot";
-
 pub const state_subscribeStorage: &str = "state_subscribeStorage";
 pub const state_unsubscribeStorage: &str = "state_unsubscribeStorage";
 pub const state_storage: &str = "state_storage";

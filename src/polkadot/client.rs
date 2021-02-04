@@ -3,25 +3,24 @@
 
 use super::session::{StorageKeys, StorageSessions};
 use crate::message::{
-    serialize_elara_api, Error, MethodCall, Params, Success, Value, Version,
+    serialize_elara_api, Error, Failure, MethodCall, Params, Success, Value, Version,
 };
 use crate::polkadot::consts;
 use crate::polkadot::session::{
     AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
-    WatchExtrinsicSessions,
+    SubscriptionSessions, WatchExtrinsicSessions,
 };
 use crate::session::ISessions;
 use crate::session::{NoParamSessions, Session, Sessions};
-use crate::websocket::WsConnection;
+use crate::websocket::{MessageHandler, WsConnection};
 
+use log::warn;
 use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
-
-// TODO: extract them to common mod.
 
 // Note: we need the session to handle the method call
 pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
@@ -30,9 +29,49 @@ pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
 pub type MethodSenders = HashMap<&'static str, MethodSender>;
 pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
 
+pub struct RequestHandler {
+    senders: MethodSenders,
+}
+
+impl RequestHandler {
+    /// make this ws connection subscribing a polkadot node jsonrpc subscription
+    pub fn new(conn: WsConnection) -> Self {
+        let (senders, receivers) = method_channel();
+        handle_subscription_response(
+            conn.clone(),
+            conn.sessions.polkadot_sessions.clone(),
+            receivers,
+        );
+        Self { senders }
+    }
+}
+
+impl MessageHandler for RequestHandler {
+    fn handle(&self, session: Session, request: MethodCall) -> Result<(), String> {
+        let sender = self
+            .senders
+            .get(request.method.as_str())
+            .ok_or(Failure {
+                jsonrpc: Version::V2_0,
+                error: jsonrpc_types::Error::method_not_found(),
+                id: Some(request.id.clone()),
+            })
+            .map_err(|err| {
+                serde_json::to_string(&err).expect("serialize a failure message")
+            })?;
+
+        let method = request.method.clone();
+        let res = sender.send((session, request));
+        if res.is_err() {
+            warn!("sender channel `{}` is closed", method);
+        }
+        Ok(())
+    }
+}
+
 type HandlerFn<S> = fn(&mut S, Session, MethodCall) -> Result<Success, Error>;
 
-pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
+pub fn method_channel() -> (MethodSenders, MethodReceivers) {
     let mut receivers = HashMap::new();
     let mut senders = HashMap::new();
 
@@ -60,15 +99,45 @@ pub fn polkadot_channel() -> (MethodSenders, MethodReceivers) {
     (senders, receivers)
 }
 
-// we start to spawn handler task in background to response for every subscription
-pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodReceivers) {
-    for (method, receiver) in receivers.into_iter() {
-        let conn = conn.clone();
+/// If not match method it return error string.
+/// If matched, it return () and send to the receiver to handle it.
+pub fn handle_subscription_request(
+    senders: MethodSenders,
+    session: Session,
+    request: MethodCall,
+) -> std::result::Result<(), String> {
+    let sender = senders
+        .get(request.method.as_str())
+        .ok_or(Failure {
+            jsonrpc: Version::V2_0,
+            error: jsonrpc_types::Error::method_not_found(),
+            id: Some(request.id.clone()),
+        })
+        .map_err(|err| {
+            serde_json::to_string(&err).expect("serialize a failure message")
+        })?;
 
+    let method = request.method.clone();
+    let res = sender.send((session, request));
+    if res.is_err() {
+        warn!("sender channel `{}` is closed", method);
+    }
+
+    Ok(())
+}
+
+/// Start to spawn handler task about subscription jsonrpc in background to response for every subscription.
+/// It maintains the sessions for this connection.
+pub fn handle_subscription_response(
+    conn: WsConnection,
+    sessions: SubscriptionSessions,
+    receivers: MethodReceivers,
+) {
+    for (method, receiver) in receivers.into_iter() {
         match method {
             consts::state_subscribeStorage => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.storage_sessions.clone(),
+                    sessions.storage_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_state_subscribeStorage,
@@ -76,7 +145,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
             }
             consts::state_unsubscribeStorage => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.storage_sessions.clone(),
+                    sessions.storage_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_state_unsubscribeStorage,
@@ -85,7 +154,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
 
             consts::state_subscribeRuntimeVersion => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.runtime_version_sessions.clone(),
+                    sessions.runtime_version_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_state_subscribeRuntimeVersion,
@@ -93,7 +162,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
             }
             consts::state_unsubscribeRuntimeVersion => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.runtime_version_sessions.clone(),
+                    sessions.runtime_version_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_state_unsubscribeRuntimeVersion,
@@ -102,7 +171,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
 
             consts::chain_subscribeNewHeads => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.new_head_sessions.clone(),
+                    sessions.new_head_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_subscribeNewHeads,
@@ -110,7 +179,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
             }
             consts::chain_unsubscribeNewHeads => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.new_head_sessions.clone(),
+                    sessions.new_head_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_unsubscribeNewHeads,
@@ -119,7 +188,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
 
             consts::chain_subscribeAllHeads => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.all_head_sessions.clone(),
+                    sessions.all_head_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_subscribeAllHeads,
@@ -127,7 +196,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
             }
             consts::chain_unsubscribeAllHeads => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.all_head_sessions.clone(),
+                    sessions.all_head_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_unsubscribeAllHeads,
@@ -136,7 +205,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
 
             consts::chain_subscribeFinalizedHeads => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.finalized_head_sessions.clone(),
+                    sessions.finalized_head_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_subscribeFinalizedHeads,
@@ -144,7 +213,7 @@ pub async fn handle_polkadot_response(conn: WsConnection, receivers: MethodRecei
             }
             consts::chain_unsubscribeFinalizedHeads => {
                 tokio::spawn(start_handle(
-                    conn.polkadot_sessions.finalized_head_sessions.clone(),
+                    sessions.finalized_head_sessions.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_unsubscribeFinalizedHeads,
@@ -174,38 +243,15 @@ async fn start_handle<SessionItem, S: ISessions<SessionItem>>(
             Ok(s) => s,
             Err(s) => s,
         };
+
         let _res = conn.send_message(Message::Text(msg)).await;
     }
 }
 
-// TODO: refine these as a trait
-//
-// #[async_trait]
-// pub trait ApiHandler<'a> {
-//     const METHOD: &'static str;
-//     async fn handle(
-//         &'a mut self,
-//         session: Session,
-//         request: MethodCall,
-//     ) -> Result<Success, Error>;
-// }
-//
-// impl<'a> ApiHandler<'a> for SubscribeStorageHandler {
-//     const METHOD: &'static str = "state_subscribeStorage";
-//
-//     async fn handle(&'a mut self, session: Session, request: MethodCall) -> Result<Success<Value>, Error> {
-//     }
-// }
-//
-// pub struct SubscribeStorageHandler<'a> {
-//     sessions: &'a mut StorageSessions,
-// }
-
-// TODO: we should remove the watch when the connection closed
 // TODO: now we don't support extrinsic
 #[allow(dead_code)]
 #[allow(non_snake_case)]
-pub(crate) fn handle_author_unwatchExtrinsic(
+fn handle_author_unwatchExtrinsic(
     sessions: &mut WatchExtrinsicSessions,
     session: Session,
     request: MethodCall,
@@ -214,7 +260,7 @@ pub(crate) fn handle_author_unwatchExtrinsic(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_state_unsubscribeStorage(
+fn handle_state_unsubscribeStorage(
     sessions: &mut StorageSessions,
     session: Session,
     request: MethodCall,
@@ -223,7 +269,7 @@ pub(crate) fn handle_state_unsubscribeStorage(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_state_unsubscribeRuntimeVersion(
+fn handle_state_unsubscribeRuntimeVersion(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
@@ -232,7 +278,7 @@ pub(crate) fn handle_state_unsubscribeRuntimeVersion(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_chain_unsubscribeAllHeads(
+fn handle_chain_unsubscribeAllHeads(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
@@ -241,7 +287,7 @@ pub(crate) fn handle_chain_unsubscribeAllHeads(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_chain_unsubscribeNewHeads(
+fn handle_chain_unsubscribeNewHeads(
     sessions: &mut NewHeadSessions,
     session: Session,
     request: MethodCall,
@@ -250,7 +296,7 @@ pub(crate) fn handle_chain_unsubscribeNewHeads(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_chain_unsubscribeFinalizedHeads(
+fn handle_chain_unsubscribeFinalizedHeads(
     sessions: &mut FinalizedHeadSessions,
     session: Session,
     request: MethodCall,
@@ -259,7 +305,7 @@ pub(crate) fn handle_chain_unsubscribeFinalizedHeads(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_state_subscribeStorage(
+fn handle_state_subscribeStorage(
     sessions: &mut StorageSessions,
     session: Session,
     request: MethodCall,
@@ -295,7 +341,7 @@ pub(crate) fn handle_state_subscribeStorage(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_state_subscribeRuntimeVersion(
+fn handle_state_subscribeRuntimeVersion(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
@@ -316,7 +362,7 @@ pub fn expect_no_params(params: &Option<Params>) -> Result<(), Error> {
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_chain_subscribeAllHeads(
+fn handle_chain_subscribeAllHeads(
     sessions: &mut AllHeadSessions,
     session: Session,
     request: MethodCall,
@@ -325,7 +371,7 @@ pub(crate) fn handle_chain_subscribeAllHeads(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_chain_subscribeNewHeads(
+fn handle_chain_subscribeNewHeads(
     sessions: &mut NewHeadSessions,
     session: Session,
     request: MethodCall,
@@ -334,7 +380,7 @@ pub(crate) fn handle_chain_subscribeNewHeads(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn handle_chain_subscribeFinalizedHeads(
+fn handle_chain_subscribeFinalizedHeads(
     sessions: &mut FinalizedHeadSessions,
     session: Session,
     request: MethodCall,

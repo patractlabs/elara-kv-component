@@ -26,7 +26,6 @@ tokio-tungstenite = { version = "0.13", features = ["connect", "tls", "stream"]}
 async-jsonrpc-client = { git = "https://github.com/koushiro/async-jsonrpc-client", branch = "master"}
 jsonrpc-types = "^0.3.2"
 structopt = "0.3"
-async-trait = "0.1"
 #tokio-stream = "0.1"
 
 [[bin]]

@@ -1,6 +1,8 @@
 pub mod client;
 pub mod consts;
-pub mod rpc_api;
+mod rpc_api;
 pub mod rpc_client;
-pub mod service;
+mod service;
 pub mod session;
+
+pub const NODE_NAME: &str = "polkadot";

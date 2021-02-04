@@ -1,12 +1,5 @@
 //! Service related session handlers.
 //! Send subscribed data to user according to subscription sessions
-
-use log::*;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::net::SocketAddr;
-use tokio_tungstenite::tungstenite::Message;
-
 use crate::message::{
     serialize_elara_api, Id, SubscriptionNotification, SubscriptionNotificationParams,
     Version,
@@ -15,127 +8,41 @@ use crate::polkadot::consts;
 use crate::polkadot::rpc_api::chain::ChainHead;
 use crate::polkadot::rpc_api::state::{RuntimeVersion, StateStorage};
 use crate::polkadot::session::{
-    AllHeadSession, FinalizedHeadSession, NewHeadSession, RuntimeVersionSession,
-    StorageKeys, StorageSession,
+    AllHeadSession, AllHeadSessions, FinalizedHeadSession, FinalizedHeadSessions,
+    NewHeadSession, NewHeadSessions, RuntimeVersionSession, RuntimeVersionSessions,
+    StorageKeys, StorageSession, StorageSessions,
 };
-use crate::session::ISessions;
+use crate::session::{ISession, ISessions, Sessions};
 use crate::websocket::WsConnection;
+use log::*;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tokio_tungstenite::tungstenite::Message;
 
-/// according to some states or sessions, we transform some data from chain node to new suitable values.
+/// According to some states or sessions, we transform some data from chain node to new suitable values.
 /// Mainly include some simple filtering operations.
-pub trait SubscriptionTransformer<'a> {
+pub trait SubscriptionTransformer {
     type Input: DeserializeOwned;
     type Output: Serialize;
+    type Session;
 
     const METHOD: &'static str;
 
-    fn transform(&'a self, input: Self::Input) -> Self::Output;
+    fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Self::Output;
 }
 
-pub struct StateStorageTransformer<'a> {
-    session: &'a StorageSession,
-    subscription_id: Id,
-}
+pub struct StateStorageTransformer;
 
-pub struct StateRuntimeVersionTransformer<'a> {
-    _session: &'a RuntimeVersionSession,
-    subscription_id: Id,
-}
-
-pub struct ChainAllHeadTransformer<'a> {
-    _session: &'a AllHeadSession,
-    subscription_id: Id,
-}
-
-pub struct ChainNewHeadTransformer<'a> {
-    _session: &'a NewHeadSession,
-    subscription_id: Id,
-}
-
-pub struct ChainFinalizedHeadTransformer<'a> {
-    _session: &'a FinalizedHeadSession,
-    subscription_id: Id,
-}
-
-impl<'a> SubscriptionTransformer<'a> for ChainAllHeadTransformer<'a> {
-    type Input = ChainHead;
-    type Output = SubscriptionNotification<ChainHead>;
-    const METHOD: &'static str = consts::chain_allHead;
-
-    fn transform(&'a self, input: Self::Input) -> Self::Output {
-        Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
-                result: input,
-                // we maintains the subscription id
-                subscription: self.subscription_id.clone(),
-            },
-        }
-    }
-}
-
-impl<'a> SubscriptionTransformer<'a> for ChainNewHeadTransformer<'a> {
-    type Input = ChainHead;
-    type Output = SubscriptionNotification<ChainHead>;
-    const METHOD: &'static str = consts::chain_newHead;
-
-    fn transform(&'a self, input: Self::Input) -> Self::Output {
-        Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
-                result: input,
-                // we maintains the subscription id
-                subscription: self.subscription_id.clone(),
-            },
-        }
-    }
-}
-
-impl<'a> SubscriptionTransformer<'a> for ChainFinalizedHeadTransformer<'a> {
-    type Input = ChainHead;
-    type Output = SubscriptionNotification<ChainHead>;
-    const METHOD: &'static str = consts::chain_finalizedHead;
-
-    fn transform(&'a self, input: Self::Input) -> Self::Output {
-        Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
-                result: input,
-                // we maintains the subscription id
-                subscription: self.subscription_id.clone(),
-            },
-        }
-    }
-}
-
-impl<'a> SubscriptionTransformer<'a> for StateRuntimeVersionTransformer<'a> {
-    type Input = RuntimeVersion;
-    type Output = SubscriptionNotification<RuntimeVersion>;
-    const METHOD: &'static str = consts::state_runtimeVersion;
-
-    fn transform(&'a self, input: Self::Input) -> Self::Output {
-        Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
-                result: input,
-                // we maintains the subscription id
-                subscription: self.subscription_id.clone(),
-            },
-        }
-    }
-}
-
-impl<'a> SubscriptionTransformer<'a> for StateStorageTransformer<'a> {
+impl SubscriptionTransformer for StateStorageTransformer {
     type Input = StateStorage;
     type Output = SubscriptionNotification<StateStorage>;
+    type Session = StorageSession;
     const METHOD: &'static str = consts::state_storage;
 
-    fn transform(&'a self, input: Self::Input) -> Self::Output {
-        let (_, keys) = self.session;
+    fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
+        let (_, keys) = session;
         match keys {
             StorageKeys::All => {
                 Self::Output {
@@ -144,7 +51,7 @@ impl<'a> SubscriptionTransformer<'a> for StateStorageTransformer<'a> {
                     params: SubscriptionNotificationParams {
                         result: input.clone(),
                         // we maintains the subscription id
-                        subscription: self.subscription_id.clone(),
+                        subscription: id.clone(),
                     },
                 }
             }
@@ -166,7 +73,7 @@ impl<'a> SubscriptionTransformer<'a> for StateStorageTransformer<'a> {
                             changes: filtered_data,
                         },
                         // we maintains the subscription id
-                        subscription: self.subscription_id.clone().into(),
+                        subscription: id.clone().into(),
                     },
                 }
             }
@@ -174,128 +81,173 @@ impl<'a> SubscriptionTransformer<'a> for StateStorageTransformer<'a> {
     }
 }
 
-fn send_message(
-    addr: SocketAddr,
-    conn: WsConnection,
-    msg: String,
-    data_type: &'static str,
-) {
+pub struct StateRuntimeVersionTransformer;
+
+impl SubscriptionTransformer for StateRuntimeVersionTransformer {
+    type Input = RuntimeVersion;
+    type Output = SubscriptionNotification<RuntimeVersion>;
+    type Session = RuntimeVersionSession;
+    const METHOD: &'static str = consts::state_storage;
+
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
+        Self::Output {
+            jsonrpc: Version::V2_0,
+            method: Self::METHOD.to_string(),
+            params: SubscriptionNotificationParams {
+                result: input,
+                // we maintains the subscription id
+                subscription: id,
+            },
+        }
+    }
+}
+
+pub struct ChainAllHeadTransformer;
+
+pub struct ChainNewHeadTransformer;
+
+pub struct ChainFinalizedHeadTransformer;
+
+impl SubscriptionTransformer for ChainAllHeadTransformer {
+    type Input = ChainHead;
+    type Output = SubscriptionNotification<ChainHead>;
+    type Session = AllHeadSession;
+    const METHOD: &'static str = consts::state_storage;
+
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
+        Self::Output {
+            jsonrpc: Version::V2_0,
+            method: Self::METHOD.to_string(),
+            params: SubscriptionNotificationParams {
+                result: input,
+                // we maintains the subscription id
+                subscription: id,
+            },
+        }
+    }
+}
+
+impl SubscriptionTransformer for ChainNewHeadTransformer {
+    type Input = ChainHead;
+    type Output = SubscriptionNotification<ChainHead>;
+    type Session = NewHeadSession;
+    const METHOD: &'static str = consts::state_storage;
+
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
+        Self::Output {
+            jsonrpc: Version::V2_0,
+            method: Self::METHOD.to_string(),
+            params: SubscriptionNotificationParams {
+                result: input,
+                // we maintains the subscription id
+                subscription: id,
+            },
+        }
+    }
+}
+
+impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
+    type Input = ChainHead;
+    type Output = SubscriptionNotification<ChainHead>;
+    type Session = FinalizedHeadSession;
+    const METHOD: &'static str = consts::state_storage;
+
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
+        Self::Output {
+            jsonrpc: Version::V2_0,
+            method: Self::METHOD.to_string(),
+            params: SubscriptionNotificationParams {
+                result: input,
+                // we maintains the subscription id
+                subscription: id,
+            },
+        }
+    }
+}
+
+fn send_message(conn: WsConnection, msg: String, data_type: &'static str) {
     tokio::spawn(async move {
         let res = conn.send_message(Message::Text(msg)).await;
         if let Err(err) = res {
             warn!(
                 "Error occurred when send {} data to peer `{}`: {:?}",
-                data_type, addr, err
+                data_type,
+                conn.addr(),
+                err
             );
         }
     });
 }
 
-// The followings are used to send data to users
+// The followings are used to send subscription data to users
 
-// TODO: we should split session and connection
-pub fn send_state_storage(addr: SocketAddr, conn: WsConnection, data: StateStorage) {
-    tokio::spawn(async move {
-        for (subscription_id, session) in
-            conn.polkadot_sessions.storage_sessions.read().await.iter()
-        {
-            let transformer = StateStorageTransformer {
-                session,
-                subscription_id: subscription_id.clone().into(),
-            };
+async fn send_subscription_data<ST, Session, Input>(
+    sessions: Arc<RwLock<Sessions<Session>>>,
+    conn: WsConnection,
+    data: Input,
+) where
+    Session: 'static + ISession,
+    Input: 'static + Clone + Send,
+    ST: SubscriptionTransformer<Session = Session, Input = Input>,
+{
+    for (subscription_id, session) in sessions.read().await.iter() {
+        let data = ST::transform(session, subscription_id.clone().into(), data.clone());
+        // two level json
+        let msg = serialize_elara_api(session, &data);
+        send_message(conn.clone(), msg, ST::METHOD);
+    }
+}
 
-            let data = transformer.transform(data.clone());
-            let (session, _) = session;
-            // two level json
-            let msg = serialize_elara_api(session, &data);
-            send_message(addr, conn.clone(), msg, StateStorageTransformer::METHOD)
-        }
-    });
+pub fn send_state_storage(
+    sessions: Arc<RwLock<StorageSessions>>,
+    conn: WsConnection,
+    data: StateStorage,
+) {
+    tokio::spawn(send_subscription_data::<StateStorageTransformer, _, _>(
+        sessions, conn, data,
+    ));
 }
 
 pub fn send_state_runtime_version(
-    addr: SocketAddr,
+    sessions: Arc<RwLock<RuntimeVersionSessions>>,
     conn: WsConnection,
     data: RuntimeVersion,
 ) {
-    tokio::spawn(async move {
-        for (subscription_id, session) in conn
-            .polkadot_sessions
-            .runtime_version_sessions
-            .read()
-            .await
-            .iter()
-        {
-            let transformer = StateRuntimeVersionTransformer {
-                _session: session,
-                subscription_id: subscription_id.clone().into(),
-            };
-
-            let data = transformer.transform(data.clone());
-            // two level json
-            let msg = serialize_elara_api(session, &data);
-            send_message(
-                addr,
-                conn.clone(),
-                msg,
-                StateRuntimeVersionTransformer::METHOD,
-            )
-        }
-    });
+    tokio::spawn(
+        send_subscription_data::<StateRuntimeVersionTransformer, _, _>(
+            sessions, conn, data,
+        ),
+    );
 }
 
-pub fn send_chain_all_head(addr: SocketAddr, conn: WsConnection, data: ChainHead) {
-    tokio::spawn(async move {
-        for (subscription_id, session) in
-            conn.polkadot_sessions.all_head_sessions.read().await.iter()
-        {
-            let transformer = ChainAllHeadTransformer {
-                _session: session,
-                subscription_id: subscription_id.clone().into(),
-            };
-            let data = transformer.transform(data.clone());
-            // two level json
-            let msg = serialize_elara_api(session, &data);
-            send_message(addr, conn.clone(), msg, ChainAllHeadTransformer::METHOD)
-        }
-    });
+pub fn send_chain_all_head(
+    sessions: Arc<RwLock<AllHeadSessions>>,
+    conn: WsConnection,
+    data: ChainHead,
+) {
+    tokio::spawn(send_subscription_data::<ChainAllHeadTransformer, _, _>(
+        sessions, conn, data,
+    ));
 }
 
-pub fn send_chain_new_head(addr: SocketAddr, conn: WsConnection, data: ChainHead) {
-    tokio::spawn(async move {
-        for (subscription_id, session) in
-            conn.polkadot_sessions.new_head_sessions.read().await.iter()
-        {
-            let transformer = ChainNewHeadTransformer {
-                _session: session,
-                subscription_id: subscription_id.clone().into(),
-            };
-            let data = transformer.transform(data.clone());
-            // two level json
-            let msg = serialize_elara_api(session, &data);
-            send_message(addr, conn.clone(), msg, ChainNewHeadTransformer::METHOD)
-        }
-    });
+pub fn send_chain_new_head(
+    sessions: Arc<RwLock<NewHeadSessions>>,
+    conn: WsConnection,
+    data: ChainHead,
+) {
+    tokio::spawn(send_subscription_data::<ChainNewHeadTransformer, _, _>(
+        sessions, conn, data,
+    ));
 }
 
-pub fn send_chain_finalized_head(addr: SocketAddr, conn: WsConnection, data: ChainHead) {
-    tokio::spawn(async move {
-        for (subscription_id, session) in
-            conn.polkadot_sessions.new_head_sessions.read().await.iter()
-        {
-            let transformer = ChainFinalizedHeadTransformer {
-                _session: session,
-                subscription_id: subscription_id.clone().into(),
-            };
-            let data = transformer.transform(data.clone());
-            // two level json
-            let msg = serialize_elara_api(session, &data);
-            send_message(
-                addr,
-                conn.clone(),
-                msg,
-                ChainFinalizedHeadTransformer::METHOD,
-            )
-        }
-    });
+pub fn send_chain_finalized_head(
+    sessions: Arc<RwLock<FinalizedHeadSessions>>,
+    conn: WsConnection,
+    data: ChainHead,
+) {
+    tokio::spawn(
+        send_subscription_data::<ChainFinalizedHeadTransformer, _, _>(
+            sessions, conn, data,
+        ),
+    );
 }

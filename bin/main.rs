@@ -9,9 +9,9 @@ use std::sync::Arc;
 use tokio_tungstenite::tungstenite;
 use tungstenite::{Error, Message};
 
-use elara_kv_component::polkadot;
 use elara_kv_component::rpc_client;
 use elara_kv_component::websocket::{WsConnection, WsConnections, WsServer};
+use elara_kv_component::{kusama, polkadot};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
@@ -52,13 +52,16 @@ async fn main() -> Result<()> {
     // accept a new connection
     loop {
         match server.accept(cfg.clone()).await {
-            Ok(connection) => {
-                connections.add(connection.clone()).await;
+            Ok(conn) => {
+                // TODO: add config for chain
 
-                info!("New WebSocket connection: {}", connection.addr());
+                // We register the configured node handlers here
+                register_handlers(conn.clone()).await;
+                connections.add(conn.clone()).await;
+                info!("New WebSocket connection: {}", conn.addr());
                 info!("Total connection num: {}", connections.len().await);
 
-                tokio::spawn(handle_connection(connection));
+                tokio::spawn(handle_connection(conn));
             }
             Err(err) => {
                 warn!("Error occurred when accept a new connection: {}", err);
@@ -99,18 +102,48 @@ async fn create_clients(
             .expect(&format!("Cannot connect to {}: {}", node, cfg.addr));
 
         match node.as_str() {
-            polkadot::consts::NODE_NAME => {
-                let polkadot_stream =
-                    polkadot::rpc_client::start_polkadot_subscribe(&client).await?;
-                polkadot_stream.start(connections.clone())
-            }
+            polkadot::NODE_NAME => subscribe_polkadot(connections.clone(), &client).await,
+            kusama::NODE_NAME => subscribe_kusama(connections.clone(), &client).await,
 
+            // TODO:
             _ => unimplemented!(),
-        }
+        };
+
+        // maintains these clients
         clients.insert(node.to_string(), Arc::new(Mutex::new(client)));
     }
 
     Ok(clients)
+}
+
+async fn subscribe_polkadot(connections: WsConnections, client: &RpcClient) {
+    info!("Start to subscribe polkadot from `{}`", client.addr());
+    let stream = polkadot::rpc_client::start_subscribe(client)
+        .await
+        .expect("Cannot subscribe polkadot node");
+    stream.start(connections.clone());
+}
+
+async fn subscribe_kusama(connections: WsConnections, client: &RpcClient) {
+    info!("Start to subscribe kusama from `{}`", client.addr());
+    let stream = kusama::rpc_client::start_subscribe(client)
+        .await
+        .expect("Cannot subscribe polkadot node");
+    stream.start(connections.clone());
+}
+
+async fn register_handlers(mut conn: WsConnection) {
+    conn.register_message_handler(
+        polkadot::NODE_NAME,
+        polkadot::client::RequestHandler::new(conn.clone()),
+    )
+    .await;
+
+    conn.register_message_handler(
+        kusama::NODE_NAME,
+        kusama::client::RequestHandler::new(conn.clone()),
+    )
+    .await;
 }
 
 async fn handle_connection(connection: WsConnection) {

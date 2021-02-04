@@ -5,13 +5,30 @@ use std::collections::HashMap;
 pub use jsonrpc_pubsub::manager::{
     IdProvider, NumericIdProvider, RandomStringIdProvider,
 };
+use std::fmt::Debug;
+
+pub trait ISession: Default + Clone + Send + Sync + Debug {
+    fn chain_name(&self) -> String;
+
+    fn client_id(&self) -> String;
+}
 
 /// Session as a subscription session
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Session {
-    // TODO: remove chain_name ?
+    // TODO: remove chain_name?
     pub chain_name: String,
     pub client_id: String,
+}
+
+impl ISession for Session {
+    fn chain_name(&self) -> String {
+        self.chain_name.clone()
+    }
+
+    fn client_id(&self) -> String {
+        self.client_id.clone()
+    }
 }
 
 impl From<&RequestMessage> for Session {
@@ -31,6 +48,7 @@ pub type NoParamSessions = Sessions<NoParamSession>;
 pub trait ISessions<S> {
     /// Returns the next ID for the subscription.
     fn new_subscription_id(&self) -> SubscriptionId;
+
     /// Returns a SubscriptionId for this storage.
     fn insert(&mut self, id: SubscriptionId, s: S) -> Option<S>;
 
@@ -40,6 +58,8 @@ pub trait ISessions<S> {
 
     /// An iterator visiting all key-value pairs in arbitrary order.
     fn iter(&self) -> Iter<'_, SubscriptionId, S>;
+
+    fn len(&self) -> usize;
 }
 
 /// Sessions maintains the ws sessions for different subscriptions for one connection
@@ -70,6 +90,10 @@ impl<S> ISessions<S> for Sessions<S> {
     /// An iterator visiting all key-value pairs in arbitrary order.
     fn iter(&self) -> Iter<'_, SubscriptionId, S> {
         self.map.iter()
+    }
+
+    fn len(&self) -> usize {
+        self.map.len()
     }
 }
 
