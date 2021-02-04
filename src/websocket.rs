@@ -78,12 +78,9 @@ impl WsConnections {
     }
 
     async fn close_conn(conn: Option<WsConnection>) {
-        match conn {
-            Some(conn) => {
-                let _ = conn.close().await;
-            }
-            None => {}
-        };
+        if let Some(conn) = conn {
+            let _ = conn.close().await;
+        }
     }
     /// remove an alive connection from pool and close it
     pub async fn remove(&mut self, addr: &SocketAddr) {
@@ -100,6 +97,10 @@ impl WsConnections {
     pub async fn len(&self) -> usize {
         self.inner.read().await.len()
     }
+
+    pub async fn is_empty(&self) -> bool {
+        self.inner.read().await.is_empty()
+    }
 }
 
 impl Default for WsConnections {
@@ -110,11 +111,11 @@ impl Default for WsConnections {
     }
 }
 
-fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &String) -> Result<()> {
+fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &str) -> Result<()> {
     if nodes.contains_key(chain) {
         Ok(())
     } else {
-        Err(ServiceError::ChainNotSupport(chain.clone()))
+        Err(ServiceError::ChainNotSupport(chain.to_string()))
     }
 }
 
@@ -233,7 +234,7 @@ impl WsConnection {
         let handler = chain_handlers.get(msg.chain.as_str());
 
         let handler = handler
-            .ok_or(ServiceError::ChainNotSupport(msg.chain.clone()))
+            .ok_or_else(|| ServiceError::ChainNotSupport(msg.chain.clone()))
             .map_err(|err| err.to_string())?;
         handler.handle(session, request)
     }

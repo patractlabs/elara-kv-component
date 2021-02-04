@@ -49,9 +49,9 @@ impl SubscriptionTransformer for StateStorageTransformer {
                     jsonrpc: Version::V2_0,
                     method: Self::METHOD.to_string(),
                     params: SubscriptionNotificationParams {
-                        result: input.clone(),
+                        result: input,
                         // we maintains the subscription id
-                        subscription: id.clone(),
+                        subscription: id,
                     },
                 }
             }
@@ -69,11 +69,11 @@ impl SubscriptionTransformer for StateStorageTransformer {
                     method: consts::state_storage.to_string(),
                     params: SubscriptionNotificationParams {
                         result: StateStorage {
-                            block: input.block.clone(),
+                            block: input.block,
                             changes: filtered_data,
                         },
                         // we maintains the subscription id
-                        subscription: id.clone().into(),
+                        subscription: id,
                     },
                 }
             }

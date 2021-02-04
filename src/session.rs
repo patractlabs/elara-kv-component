@@ -60,6 +60,10 @@ pub trait ISessions<S> {
     fn iter(&self) -> Iter<'_, SubscriptionId, S>;
 
     fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Sessions maintains the ws sessions for different subscriptions for one connection
