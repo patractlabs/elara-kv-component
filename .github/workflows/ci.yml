@@ -10,10 +10,7 @@ env:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
     strategy:
-      matrix:
-strategy:
       matrix:
         platform: [ubuntu-latest]
         toolchain: [stable]
@@ -22,22 +19,23 @@ strategy:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{ matrix.rust-version }}
-          default: true
+          toolchain: ${{ matrix.toolchain }}
+          override: true
           components: rustfmt, clippy
       - run: cargo fmt -- --check
       - run: cargo clippy -- -Dwarnings
 
   test:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust-version: [stable, nightly]
+        platform: [ubuntu-latest]
+        toolchain: [stable]
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{ matrix.rust-version }}
-          default: true
+          toolchain: ${{ matrix.toolchain }}
+          override: true
       - run: cargo test --verbose
       - run: cargo test --doc
