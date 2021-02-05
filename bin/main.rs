@@ -1,7 +1,6 @@
 mod cmd;
 
 use elara_kv_component::config::*;
-use elara_kv_component::error::Result;
 use elara_kv_component::rpc_client::RpcClient;
 use futures::StreamExt;
 use log::*;
@@ -16,13 +15,12 @@ use std::collections::HashMap;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 
-use elara_kv_component::error::ServiceError::WsServerError;
 use structopt::StructOpt;
 
 type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     env_logger::init();
 
     let opt = cmd::Opt::from_args();
@@ -37,7 +35,7 @@ async fn main() -> Result<()> {
     let addr = cfg.ws.addr.as_str();
     let server = WsServer::bind(addr)
         .await
-        .expect(&*format!("Cannot listen {}", addr));
+        .unwrap_or_else(|_| panic!("Cannot listen {}", addr));
     info!("Started WebSocket server at {}", addr);
 
     // started to subscribe chain node by ws client
@@ -54,10 +52,10 @@ async fn main() -> Result<()> {
         match server.accept(cfg.clone()).await {
             Ok(conn) => {
                 // TODO: add config for chain
+                connections.add(conn.clone()).await;
 
                 // We register the configured node handlers here
                 register_handlers(conn.clone()).await;
-                connections.add(conn.clone()).await;
                 info!("New WebSocket connection: {}", conn.addr());
                 info!("Total connection num: {}", connections.len().await);
 
@@ -70,6 +68,8 @@ async fn main() -> Result<()> {
     }
 }
 
+const CONN_EXPIRED_TIME_SECS: u64 = 10;
+
 // we remove unlived connection every 5s
 async fn remove_expired_connections(mut conns: WsConnections) {
     loop {
@@ -81,12 +81,12 @@ async fn remove_expired_connections(mut conns: WsConnections) {
         }
 
         for addr in expired {
-            conns.remove(&addr).await;
             info!("Removed a expired connection: {}", addr);
+            conns.remove(&addr).await;
             info!("Total connection num: {}", conns.len().await);
         }
 
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(CONN_EXPIRED_TIME_SECS)).await;
     }
 }
 
@@ -149,10 +149,11 @@ async fn register_handlers(mut conn: WsConnection) {
 async fn handle_connection(connection: WsConnection) {
     let receiver = connection.receiver();
     let mut receiver = receiver.lock().await;
-    loop {
-        let msg = receiver.next().await;
+
+    while let Some(msg) = receiver.next().await {
+        debug!("recv a message: {:?}", msg);
         match msg {
-            Some(Ok(msg)) => {
+            Ok(msg) => {
                 if msg.is_empty() {
                     continue;
                 }
@@ -190,26 +191,14 @@ async fn handle_connection(connection: WsConnection) {
             }
 
             // closed connection
-            Some(Err(Error::ConnectionClosed)) | None => break,
+            Err(Error::ConnectionClosed) => break,
 
-            Some(Err(err)) => {
-                warn!("Err {}", err);
+            Err(err) => {
+                warn!("Err occurred when receive a message: {}", err);
+                break;
             }
         }
     }
-
-    match connection.close().await {
-        Ok(()) => {}
-        Err(WsServerError(Error::ConnectionClosed)) => {}
-        Err(WsServerError(err)) => {
-            warn!(
-                "Error occurred when closed connection to {}: {}",
-                connection.addr(),
-                err,
-            );
-        }
-        _ => {}
-    };
 
     info!("Closed connection to peer {}", connection.addr());
 }

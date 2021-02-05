@@ -1,9 +1,11 @@
 use crate::config::{Config, NodeConfig};
-use crate::error::{Result, ServiceError};
-use crate::message::{Failure, MethodCall, RequestMessage, Version};
+use crate::message::{
+    ErrorMessage, Failure, MethodCall, RequestMessage, ResponseMessage, Version,
+};
 use crate::polkadot;
 use crate::session::Session;
 
+use core::result;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
@@ -56,7 +58,7 @@ pub trait MessageHandler: Send + Sync {
         &self,
         session: Session,
         request: MethodCall,
-    ) -> std::result::Result<(), String>;
+    ) -> std::result::Result<(), ResponseMessage>;
 }
 
 pub type WsSender = SplitSink<WebSocketStream<TcpStream>, Message>;
@@ -74,19 +76,19 @@ impl WsConnections {
         }
         let mut map = self.inner.write().await;
         let expired = map.insert(conn.addr(), conn);
-        Self::close_conn(expired).await
+        Self::close_conn(expired);
     }
 
-    async fn close_conn(conn: Option<WsConnection>) {
+    fn close_conn(conn: Option<WsConnection>) {
         if let Some(conn) = conn {
-            let _ = conn.close().await;
+            conn.close();
         }
     }
     /// remove an alive connection from pool and close it
     pub async fn remove(&mut self, addr: &SocketAddr) {
         let mut map = self.inner.write().await;
         let expired = map.remove(addr);
-        Self::close_conn(expired).await
+        Self::close_conn(expired);
     }
 
     #[inline]
@@ -111,11 +113,14 @@ impl Default for WsConnections {
     }
 }
 
-fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &str) -> Result<()> {
+fn validate_chain(
+    nodes: &HashMap<String, NodeConfig>,
+    chain: &str,
+) -> result::Result<(), ErrorMessage> {
     if nodes.contains_key(chain) {
         Ok(())
     } else {
-        Err(ServiceError::ChainNotSupport(chain.to_string()))
+        Err(ErrorMessage::chain_not_found())
     }
 }
 
@@ -159,51 +164,40 @@ impl WsConnection {
 
     #[inline]
     pub fn closed(&self) -> bool {
-        self.closed.load(Ordering::Relaxed)
+        self.closed.load(Ordering::SeqCst)
     }
 
-    pub async fn close(&self) -> Result<()> {
+    pub fn close(&self) {
+        if self.closed() {
+            return;
+        }
+        self.closed.store(true, Ordering::SeqCst);
+    }
+
+    pub async fn send_close(&self) -> tungstenite::Result<()> {
         if self.closed() {
             return Ok(());
         }
-        let mut sender = self.sender.lock().await;
-        self.closed.store(true, Ordering::Relaxed);
-        sender.close().await.map_err(ServiceError::WsServerError)
-    }
-
-    pub async fn send_close(&self) -> Result<()> {
-        if self.closed() {
-            return Ok(());
-        }
-        let res = self
-            .sender
+        self.sender
             .lock()
             .await
             .send(Message::Close(Some(CloseFrame {
                 code: CloseCode::Normal,
                 reason: Default::default(),
             })))
-            .await;
-        res.map_err(ServiceError::WsServerError)
+            .await
     }
 
-    pub async fn send_message(&self, msg: Message) -> Result<()> {
-        if self.closed() {
-            return Ok(());
-        }
-        let res = self.sender.lock().await.send(msg).await;
-        res.map_err(ServiceError::WsServerError)
+    pub async fn send_message(&self, msg: Message) -> tungstenite::Result<()> {
+        self.sender.lock().await.send(msg).await
     }
 
-    pub async fn send_messages(&self, msgs: Vec<Message>) -> Result<()> {
-        if self.closed() {
-            return Ok(());
-        }
+    pub async fn send_messages(&self, msgs: Vec<Message>) -> tungstenite::Result<()> {
         let mut sender = self.sender.lock().await;
         for msg in msgs.into_iter() {
             sender.feed(msg).await?;
         }
-        sender.flush().await.map_err(ServiceError::WsServerError)
+        sender.flush().await
     }
 
     // when result is ok, it means to send it to corresponding subscription channel to handle it.
@@ -212,12 +206,20 @@ impl WsConnection {
     async fn _handle_message(
         &self,
         msg: impl Into<String>,
-    ) -> std::result::Result<(), String> {
+    ) -> std::result::Result<(), ResponseMessage> {
         let msg = msg.into();
-        let msg: RequestMessage =
-            serde_json::from_str(msg.as_str()).map_err(|err| err.to_string())?;
+        let msg: RequestMessage = serde_json::from_str(msg.as_str()).map_err(|_| {
+            ResponseMessage::error_response(None, None, ErrorMessage::parse_error())
+        })?;
 
-        validate_chain(&self.cfg.nodes, &msg.chain).map_err(|err| err.to_string())?;
+        validate_chain(&self.cfg.nodes, &msg.chain).map_err(|err| {
+            ResponseMessage::error_response(
+                Some(msg.id.clone()),
+                Some(msg.chain.clone()),
+                err,
+            )
+        })?;
+
         let session: Session = Session::from(&msg);
         let request = serde_json::from_str::<MethodCall>(&msg.request)
             .map_err(|_| Failure {
@@ -227,15 +229,28 @@ impl WsConnection {
             })
             .map_err(|err| {
                 serde_json::to_string(&err).expect("serialize a failure message")
+            })
+            .map_err(|res| ResponseMessage {
+                id: Some(msg.id.clone()),
+                chain: Some(msg.id.clone()),
+                error: None,
+                result: Some(res),
             })?;
 
         let chain_handlers = self.chain_handlers.read().await;
 
         let handler = chain_handlers.get(msg.chain.as_str());
 
-        let handler = handler
-            .ok_or_else(|| ServiceError::ChainNotSupport(msg.chain.clone()))
-            .map_err(|err| err.to_string())?;
+        let handler =
+            handler
+                .ok_or_else(ErrorMessage::chain_not_found)
+                .map_err(|err| {
+                    ResponseMessage::error_response(
+                        Some(msg.id.clone()),
+                        Some(msg.chain.clone()),
+                        err,
+                    )
+                })?;
         handler.handle(session, request)
     }
 
@@ -252,11 +267,19 @@ impl WsConnection {
 
     /// Send successful response in other channel handler.
     /// The error result represents error occurred when send response
-    pub async fn handle_message(&self, msg: impl Into<String>) -> Result<()> {
+    pub async fn handle_message(
+        &self,
+        msg: impl Into<String>,
+    ) -> tungstenite::Result<()> {
         let res = self._handle_message(msg).await;
         match res {
             // send no rpc error response in here
-            Err(err) => self.send_message(Message::Text(err)).await,
+            Err(resp) => {
+                self.send_message(Message::Text(
+                    serde_json::to_string(&resp).expect("serialize a response message"),
+                ))
+                .await
+            }
             // do other rpc logic in other way
             Ok(()) => Ok(()),
         }
