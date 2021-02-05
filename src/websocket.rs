@@ -232,7 +232,7 @@ impl WsConnection {
             })
             .map_err(|res| ResponseMessage {
                 id: Some(msg.id.clone()),
-                chain: Some(msg.id.clone()),
+                chain: Some(msg.chain.clone()),
                 error: None,
                 result: Some(res),
             })?;
