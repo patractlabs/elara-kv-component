@@ -1,11 +1,12 @@
-use crate::error::ServiceError;
 use crate::session::ISession;
 
+use core::fmt;
 pub use jsonrpc_types::{
     Call, Error, Failure, Id, MethodCall, Output, Params, SubscriptionNotification,
     SubscriptionNotificationParams, Success, Value, Version,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::error;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -18,23 +19,141 @@ pub struct RequestMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ResponseMessage {
-    pub id: String,
-    pub chain: String,
+    pub id: Option<String>,
+    pub chain: Option<String>,
+    // an elara error
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ErrorMessage>,
     /// A jsonrpc string about result
-    pub result: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
 }
 
-/// When request is illegal, the message will be returned.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ResponseErrorMessage {
-    pub error: String,
-}
-
-impl From<ServiceError> for ResponseErrorMessage {
-    fn from(err: ServiceError) -> Self {
+impl ResponseMessage {
+    pub fn result_response(
+        id: Option<String>,
+        chain: Option<String>,
+        result: String,
+    ) -> Self {
         Self {
-            error: err.to_string(),
+            id,
+            chain,
+            error: None,
+            result: Some(result),
         }
+    }
+
+    pub fn error_response(
+        id: Option<String>,
+        chain: Option<String>,
+        err: ErrorMessage,
+    ) -> Self {
+        Self {
+            id,
+            chain,
+            error: Some(err),
+            result: None,
+        }
+    }
+}
+
+/// Elara-kv Error Object.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ErrorMessage {
+    /// A Number that indicates the error type that occurred.
+    /// This MUST be an integer.
+    pub code: ErrorCode,
+    /// A String providing a short description of the error.
+    /// The message SHOULD be limited to a concise single sentence.
+    pub message: String,
+}
+
+impl fmt::Display for ErrorMessage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.code.description(), self.message)
+    }
+}
+
+impl error::Error for ErrorMessage {}
+
+impl ErrorMessage {
+    /// Wraps given `ErrorCode`.
+    pub fn new(code: ErrorCode) -> Self {
+        Self {
+            message: code.description(),
+            code,
+        }
+    }
+    /// Creates a new `ParseError` error.
+    pub fn parse_error() -> Self {
+        Self::new(ErrorCode::ParseError)
+    }
+    /// Creates a new `ChainNotFound` error.
+    pub fn chain_not_found() -> Self {
+        Self::new(ErrorCode::ChainNotFound)
+    }
+}
+
+/// Elara-kv Error Code.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ErrorCode {
+    /// Invalid JSON was received by the server.
+    /// An error occurred on the server while parsing the JSON text.
+    ParseError,
+    /// The chain does not exist / is not available.
+    ChainNotFound,
+    /// Reserved for implementation-defined server-errors.
+    ServerError(i64),
+}
+
+impl From<i64> for ErrorCode {
+    fn from(code: i64) -> Self {
+        match code {
+            -1 => ErrorCode::ParseError,
+            -2 => ErrorCode::ChainNotFound,
+            code => ErrorCode::ServerError(code),
+        }
+    }
+}
+
+impl Serialize for ErrorCode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i64(self.code())
+    }
+}
+
+impl<'de> Deserialize<'de> for ErrorCode {
+    fn deserialize<D>(deserializer: D) -> Result<ErrorCode, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let code: i64 = Deserialize::deserialize(deserializer)?;
+        Ok(ErrorCode::from(code))
+    }
+}
+
+impl ErrorCode {
+    /// Returns integer code value.
+    pub fn code(&self) -> i64 {
+        match self {
+            ErrorCode::ParseError => -1,
+            ErrorCode::ChainNotFound => -2,
+            ErrorCode::ServerError(code) => *code,
+        }
+    }
+
+    /// Returns human-readable description.
+    pub fn description(&self) -> String {
+        let desc = match self {
+            ErrorCode::ParseError => "Parse error",
+            ErrorCode::ChainNotFound => "Chain not found",
+            ErrorCode::ServerError(_) => "Server error",
+        };
+        desc.to_string()
     }
 }
 
@@ -164,7 +283,7 @@ mod tests {
 "#;
 
         let v: RequestMessage = serde_json::from_str(request_data)?;
-        let _v: MethodCall = serde_json::from_str(&*v.request)?;
+        let _v: MethodCall = serde_json::from_str(&v.request)?;
 
         Ok(())
     }
@@ -180,7 +299,7 @@ mod tests {
 "#;
 
         let v: ResponseMessage = serde_json::from_str(data)?;
-        let _v: Success = serde_json::from_str(&*v.result)?;
+        let _v: Success = serde_json::from_str(&v.result.unwrap())?;
 
         Ok(())
     }
@@ -196,7 +315,7 @@ mod tests {
 "#;
 
         let v: SubscribedMessage = serde_json::from_str(msg)?;
-        let _v: SubscriptionNotification = serde_json::from_str(&*v.data)?;
+        let _v: SubscriptionNotification = serde_json::from_str(&v.data)?;
 
         Ok(())
     }

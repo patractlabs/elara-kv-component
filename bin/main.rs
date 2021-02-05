@@ -1,7 +1,6 @@
 mod cmd;
 
 use elara_kv_component::config::*;
-use elara_kv_component::error::Result;
 use elara_kv_component::rpc_client::RpcClient;
 use futures::StreamExt;
 use log::*;
@@ -21,7 +20,7 @@ use structopt::StructOpt;
 type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     env_logger::init();
 
     let opt = cmd::Opt::from_args();

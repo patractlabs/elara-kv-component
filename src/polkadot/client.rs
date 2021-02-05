@@ -3,7 +3,8 @@
 
 use super::session::{StorageKeys, StorageSessions};
 use crate::message::{
-    serialize_elara_api, Error, Failure, MethodCall, Params, Success, Value, Version,
+    serialize_elara_api, Error, Failure, MethodCall, Params, ResponseMessage, Success,
+    Value, Version,
 };
 use crate::polkadot::consts;
 use crate::polkadot::session::{
@@ -48,7 +49,11 @@ impl RequestHandler {
 }
 
 impl MessageHandler for RequestHandler {
-    fn handle(&self, session: Session, request: MethodCall) -> Result<(), String> {
+    fn handle(
+        &self,
+        session: Session,
+        request: MethodCall,
+    ) -> Result<(), ResponseMessage> {
         let sender = self
             .senders
             .get(request.method.as_str())
@@ -59,6 +64,13 @@ impl MessageHandler for RequestHandler {
             })
             .map_err(|err| {
                 serde_json::to_string(&err).expect("serialize a failure message")
+            })
+            .map_err(|res| {
+                ResponseMessage::result_response(
+                    Some(session.client_id.clone()),
+                    Some(session.chain_name.clone()),
+                    res,
+                )
             })?;
 
         let method = request.method.clone();
