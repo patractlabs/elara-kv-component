@@ -4,4 +4,4 @@ addr = "localhost:9002"
 [nodes.polkadot]
 addr = "wss://rpc.polkadot.io"
 [nodes.kusama]
-addr = "wss://rpc.polkadot.io"
+addr = "wss://kusama-rpc.polkadot.io/"
