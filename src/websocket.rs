@@ -164,8 +164,7 @@ impl WsConnection {
 
     #[inline]
     pub fn closed(&self) -> bool {
-        let b = self.closed.load(Ordering::SeqCst);
-        b
+        self.closed.load(Ordering::SeqCst)
     }
 
     pub fn close(&self) {
@@ -242,15 +241,16 @@ impl WsConnection {
 
         let handler = chain_handlers.get(msg.chain.as_str());
 
-        let handler = handler
-            .ok_or_else(|| ErrorMessage::chain_not_found())
-            .map_err(|err| {
-                ResponseMessage::error_response(
-                    Some(msg.id.clone()),
-                    Some(msg.chain.clone()),
-                    err,
-                )
-            })?;
+        let handler =
+            handler
+                .ok_or_else(ErrorMessage::chain_not_found)
+                .map_err(|err| {
+                    ResponseMessage::error_response(
+                        Some(msg.id.clone()),
+                        Some(msg.chain.clone()),
+                        err,
+                    )
+                })?;
         handler.handle(session, request)
     }
 

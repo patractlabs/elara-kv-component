@@ -35,7 +35,7 @@ async fn main() {
     let addr = cfg.ws.addr.as_str();
     let server = WsServer::bind(addr)
         .await
-        .expect(&format!("Cannot listen {}", addr));
+        .unwrap_or_else(|_| panic!("Cannot listen {}", addr));
     info!("Started WebSocket server at {}", addr);
 
     // started to subscribe chain node by ws client

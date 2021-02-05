@@ -219,23 +219,20 @@ async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
     handle: HandlerFn<S>,
 ) {
     while let Some((session, request)) = receiver.recv().await {
-        loop {
-            // We try to lock it instead of keeping it locked.
-            // Because the lock time may be longer.
-            let mut sessions = sessions.write().await;
-            let res = handle(sessions.borrow_mut(), session.clone(), request);
+        // We try to lock it instead of keeping it locked.
+        // Because the lock time may be longer.
+        let mut sessions = sessions.write().await;
+        let res = handle(sessions.borrow_mut(), session.clone(), request);
 
-            let res = res
-                .map(|success| serialize_elara_api(&session, &success))
-                .map_err(|err| serialize_elara_api(&session, &err));
-            let msg = match res {
-                Ok(s) => s,
-                Err(s) => s,
-            };
+        let res = res
+            .map(|success| serialize_elara_api(&session, &success))
+            .map_err(|err| serialize_elara_api(&session, &err));
+        let msg = match res {
+            Ok(s) => s,
+            Err(s) => s,
+        };
 
-            let _res = conn.send_message(Message::Text(msg)).await;
-            break;
-        }
+        let _res = conn.send_message(Message::Text(msg)).await;
     }
 }
 
