@@ -1,5 +1,6 @@
 //! Service related session handlers.
 //! Send subscribed data to user according to subscription sessions
+use crate::kusama::session::GrandpaJustificationSessions;
 use crate::message::{
     serialize_elara_api, Id, SubscriptionNotification, SubscriptionNotificationParams,
     Version,
@@ -22,7 +23,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::error::Error;
 use tokio_tungstenite::tungstenite::Message;
-use crate::kusama::session::GrandpaJustificationSessions;
 
 /// According to some states or sessions, we transform some data from chain node to new suitable values.
 /// Mainly include some simple filtering operations.
@@ -252,11 +252,11 @@ pub fn send_grandpa_justifications(
     conn: WsConnection,
     data: GrandpaJustification,
 ) {
-    tokio::spawn(
-        send_subscription_data::<GrandpaJustificationTransformer, _, _>(
-            sessions, conn, data,
-        ),
-    );
+    tokio::spawn(send_subscription_data::<
+        GrandpaJustificationTransformer,
+        _,
+        _,
+    >(sessions, conn, data));
 }
 
 pub fn send_chain_all_head(

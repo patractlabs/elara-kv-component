@@ -1,5 +1,8 @@
 use crate::polkadot::consts;
-use crate::polkadot::service::{send_chain_all_head, send_chain_finalized_head, send_chain_new_head, send_state_runtime_version, send_state_storage, send_grandpa_justifications};
+use crate::polkadot::service::{
+    send_chain_all_head, send_chain_finalized_head, send_chain_new_head,
+    send_grandpa_justifications, send_state_runtime_version, send_state_storage,
+};
 use crate::rpc_client::RpcClient;
 use crate::websocket::{WsConnection, WsConnections};
 use async_jsonrpc_client::{NotificationStream, RpcClientError};
@@ -133,7 +136,6 @@ impl SubscribedStream {
             ));
         }
 
-
         {
             tokio::spawn(send_messages_to_conns(
                 grandpa_justifications,
@@ -159,7 +161,6 @@ impl SubscribedStream {
                 },
             ));
         }
-
 
         {
             tokio::spawn(send_messages_to_conns(
