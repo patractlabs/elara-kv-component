@@ -1,10 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-/// storage data as Subscribed data in `result`
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StateStorage {
     pub block: String,
-    // the first elem of tuple is key, the second is storage
     pub changes: Vec<(String, Option<String>)>,
 }
 

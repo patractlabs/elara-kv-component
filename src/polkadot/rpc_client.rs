@@ -1,8 +1,5 @@
 use crate::polkadot::consts;
-use crate::polkadot::service::{
-    send_chain_all_head, send_chain_finalized_head, send_chain_new_head,
-    send_state_runtime_version, send_state_storage,
-};
+use crate::polkadot::service::{send_chain_all_head, send_chain_finalized_head, send_chain_new_head, send_state_runtime_version, send_state_storage, send_grandpa_justifications};
 use crate::rpc_client::RpcClient;
 use crate::websocket::{WsConnection, WsConnections};
 use async_jsonrpc_client::{NotificationStream, RpcClientError};
@@ -18,6 +15,7 @@ pub struct SubscribedStream {
     all_head: NotificationStream,
     new_head: NotificationStream,
     finalized_head: NotificationStream,
+    grandpa_justifications: NotificationStream,
 }
 
 pub async fn start_subscribe(
@@ -28,6 +26,9 @@ pub async fn start_subscribe(
         .await?;
     let version = client
         .subscribe(consts::state_subscribeRuntimeVersion, None)
+        .await?;
+    let grandpa_justifications = client
+        .subscribe(consts::grandpa_subscribeJustifications, None)
         .await?;
     let all_head = client
         .subscribe(consts::chain_subscribeAllHeads, None)
@@ -42,6 +43,7 @@ pub async fn start_subscribe(
     Ok(SubscribedStream {
         storage,
         version,
+        grandpa_justifications,
         all_head,
         new_head,
         finalized_head,
@@ -74,6 +76,7 @@ impl SubscribedStream {
         let Self {
             storage,
             version,
+            grandpa_justifications,
             all_head,
             new_head,
             finalized_head,
@@ -129,6 +132,35 @@ impl SubscribedStream {
                 },
             ));
         }
+
+
+        {
+            tokio::spawn(send_messages_to_conns(
+                grandpa_justifications,
+                conns.clone(),
+                move |conn, data| {
+                    match serde_json::value::from_value(data.params.result.clone()) {
+                        Ok(data) => send_grandpa_justifications(
+                            conn.sessions
+                                .polkadot_sessions
+                                .grandpa_justifications
+                                .clone(),
+                            conn,
+                            data,
+                        ),
+
+                        Err(err) => {
+                            warn!(
+                                "Receive an illegal subscribed data: {}: {}",
+                                err, &data
+                            )
+                        }
+                    };
+                },
+            ));
+        }
+
+
         {
             tokio::spawn(send_messages_to_conns(
                 all_head,
@@ -151,6 +183,7 @@ impl SubscribedStream {
                 },
             ));
         }
+
         {
             tokio::spawn(send_messages_to_conns(
                 new_head,
@@ -173,6 +206,7 @@ impl SubscribedStream {
                 },
             ));
         }
+
         {
             tokio::spawn(send_messages_to_conns(
                 finalized_head,

@@ -6,8 +6,13 @@ use crate::message::{
 };
 use crate::polkadot::consts;
 use crate::polkadot::rpc_api::chain::ChainHead;
+use crate::polkadot::rpc_api::grandpa::GrandpaJustification;
 use crate::polkadot::rpc_api::state::{RuntimeVersion, StateStorage};
-use crate::polkadot::session::{AllHeadSession, AllHeadSessions, FinalizedHeadSession, FinalizedHeadSessions, NewHeadSession, NewHeadSessions, RuntimeVersionSession, RuntimeVersionSessions, StorageKeys, StorageSession, StorageSessions, GrandpaJustificationSession};
+use crate::polkadot::session::{
+    AllHeadSession, AllHeadSessions, FinalizedHeadSession, FinalizedHeadSessions,
+    GrandpaJustificationSession, NewHeadSession, NewHeadSessions, RuntimeVersionSession,
+    RuntimeVersionSessions, StorageKeys, StorageSession, StorageSessions,
+};
 use crate::session::{ISession, ISessions, Sessions};
 use crate::websocket::WsConnection;
 use log::*;
@@ -17,7 +22,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::error::Error;
 use tokio_tungstenite::tungstenite::Message;
-use crate::polkadot::rpc_api::grandpa::GrandpaJustification;
+use crate::kusama::session::GrandpaJustificationSessions;
 
 /// According to some states or sessions, we transform some data from chain node to new suitable values.
 /// Mainly include some simple filtering operations.
@@ -237,6 +242,18 @@ pub fn send_state_runtime_version(
 ) {
     tokio::spawn(
         send_subscription_data::<StateRuntimeVersionTransformer, _, _>(
+            sessions, conn, data,
+        ),
+    );
+}
+
+pub fn send_grandpa_justifications(
+    sessions: Arc<RwLock<GrandpaJustificationSessions>>,
+    conn: WsConnection,
+    data: GrandpaJustification,
+) {
+    tokio::spawn(
+        send_subscription_data::<GrandpaJustificationTransformer, _, _>(
             sessions, conn, data,
         ),
     );
