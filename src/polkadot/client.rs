@@ -89,6 +89,8 @@ pub fn method_channel() -> (MethodSenders, MethodReceivers) {
     let mut senders = HashMap::new();
 
     let methods = vec![
+        consts::grandpa_subscribeJustifications,
+        consts::grandpa_unsubscribeJustifications,
         consts::state_subscribeStorage,
         consts::state_unsubscribeStorage,
         consts::state_subscribeRuntimeVersion,
@@ -152,6 +154,23 @@ pub fn handle_subscription_response(
                     conn.clone(),
                     receiver,
                     handle_state_unsubscribeRuntimeVersion,
+                ));
+            }
+
+            consts::grandpa_subscribeJustifications => {
+                tokio::spawn(start_handle(
+                    sessions.grandpa_justifications.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_grandpa_subscribeJustifications,
+                ));
+            }
+            consts::grandpa_unsubscribeJustifications => {
+                tokio::spawn(start_handle(
+                    sessions.grandpa_justifications.clone(),
+                    conn.clone(),
+                    receiver,
+                    handle_grandpa_unsubscribeJustifications,
                 ));
             }
 
@@ -266,6 +285,15 @@ fn handle_state_unsubscribeRuntimeVersion(
 }
 
 #[allow(non_snake_case)]
+fn handle_grandpa_unsubscribeJustifications(
+    sessions: &mut RuntimeVersionSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    handle_unsubscribe(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
 fn handle_chain_unsubscribeAllHeads(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
@@ -330,6 +358,15 @@ fn handle_state_subscribeStorage(
 
 #[allow(non_snake_case)]
 fn handle_state_subscribeRuntimeVersion(
+    sessions: &mut RuntimeVersionSessions,
+    session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    _handle_no_param_method_call(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+fn handle_grandpa_subscribeJustifications(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,

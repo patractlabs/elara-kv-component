@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 pub struct SubscriptionSessions {
     pub storage_sessions: Arc<RwLock<StorageSessions>>,
     pub runtime_version_sessions: Arc<RwLock<RuntimeVersionSessions>>,
+    pub grandpa_justifications: Arc<RwLock<GrandpaJustificationSessions>>,
     pub all_head_sessions: Arc<RwLock<AllHeadSessions>>,
     pub new_head_sessions: Arc<RwLock<NewHeadSessions>>,
     pub finalized_head_sessions: Arc<RwLock<FinalizedHeadSessions>>,
@@ -22,6 +23,9 @@ pub type NewHeadSessions = NoParamSessions;
 
 pub type FinalizedHeadSession = NoParamSession;
 pub type FinalizedHeadSessions = NoParamSessions;
+
+pub type GrandpaJustificationSession = NoParamSession;
+pub type GrandpaJustificationSessions = NoParamSessions;
 
 pub type RuntimeVersionSession = NoParamSession;
 pub type RuntimeVersionSessions = NoParamSessions;
