@@ -7,11 +7,7 @@ use crate::message::{
 use crate::polkadot::consts;
 use crate::polkadot::rpc_api::chain::ChainHead;
 use crate::polkadot::rpc_api::state::{RuntimeVersion, StateStorage};
-use crate::polkadot::session::{
-    AllHeadSession, AllHeadSessions, FinalizedHeadSession, FinalizedHeadSessions,
-    NewHeadSession, NewHeadSessions, RuntimeVersionSession, RuntimeVersionSessions,
-    StorageKeys, StorageSession, StorageSessions,
-};
+use crate::polkadot::session::{AllHeadSession, AllHeadSessions, FinalizedHeadSession, FinalizedHeadSessions, NewHeadSession, NewHeadSessions, RuntimeVersionSession, RuntimeVersionSessions, StorageKeys, StorageSession, StorageSessions, GrandpaJustificationSession};
 use crate::session::{ISession, ISessions, Sessions};
 use crate::websocket::WsConnection;
 use log::*;
@@ -21,6 +17,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::error::Error;
 use tokio_tungstenite::tungstenite::Message;
+use crate::polkadot::rpc_api::grandpa::GrandpaJustification;
 
 /// According to some states or sessions, we transform some data from chain node to new suitable values.
 /// Mainly include some simple filtering operations.
@@ -88,7 +85,28 @@ impl SubscriptionTransformer for StateRuntimeVersionTransformer {
     type Input = RuntimeVersion;
     type Output = SubscriptionNotification<RuntimeVersion>;
     type Session = RuntimeVersionSession;
-    const METHOD: &'static str = consts::state_storage;
+    const METHOD: &'static str = consts::state_runtimeVersion;
+
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
+        Self::Output {
+            jsonrpc: Version::V2_0,
+            method: Self::METHOD.to_string(),
+            params: SubscriptionNotificationParams {
+                result: input,
+                // we maintains the subscription id
+                subscription: id,
+            },
+        }
+    }
+}
+
+pub struct GrandpaJustificationTransformer;
+
+impl SubscriptionTransformer for GrandpaJustificationTransformer {
+    type Input = GrandpaJustification;
+    type Output = SubscriptionNotification<GrandpaJustification>;
+    type Session = GrandpaJustificationSession;
+    const METHOD: &'static str = consts::grandpa_justifications;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
         Self::Output {
@@ -105,15 +123,11 @@ impl SubscriptionTransformer for StateRuntimeVersionTransformer {
 
 pub struct ChainAllHeadTransformer;
 
-pub struct ChainNewHeadTransformer;
-
-pub struct ChainFinalizedHeadTransformer;
-
 impl SubscriptionTransformer for ChainAllHeadTransformer {
     type Input = ChainHead;
     type Output = SubscriptionNotification<ChainHead>;
     type Session = AllHeadSession;
-    const METHOD: &'static str = consts::state_storage;
+    const METHOD: &'static str = consts::chain_allHead;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
         Self::Output {
@@ -127,12 +141,14 @@ impl SubscriptionTransformer for ChainAllHeadTransformer {
         }
     }
 }
+
+pub struct ChainNewHeadTransformer;
 
 impl SubscriptionTransformer for ChainNewHeadTransformer {
     type Input = ChainHead;
     type Output = SubscriptionNotification<ChainHead>;
     type Session = NewHeadSession;
-    const METHOD: &'static str = consts::state_storage;
+    const METHOD: &'static str = consts::chain_newHead;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
         Self::Output {
@@ -147,11 +163,13 @@ impl SubscriptionTransformer for ChainNewHeadTransformer {
     }
 }
 
+pub struct ChainFinalizedHeadTransformer;
+
 impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
     type Input = ChainHead;
     type Output = SubscriptionNotification<ChainHead>;
     type Session = FinalizedHeadSession;
-    const METHOD: &'static str = consts::state_storage;
+    const METHOD: &'static str = consts::chain_finalizedHead;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
         Self::Output {

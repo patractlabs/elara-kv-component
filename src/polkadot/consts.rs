@@ -8,6 +8,10 @@ pub const state_subscribeRuntimeVersion: &str = "state_subscribeRuntimeVersion";
 pub const state_unsubscribeRuntimeVersion: &str = "state_unsubscribeRuntimeVersion";
 pub const state_runtimeVersion: &str = "state_runtimeVersion";
 
+pub const grandpa_subscribeJustifications: &str = "grandpa_subscribeJustifications";
+pub const grandpa_unsubscribeJustifications: &str = "grandpa_unsubscribeJustifications";
+pub const grandpa_justifications: &str = "grandpa_justifications";
+
 pub const chain_subscribeAllHeads: &str = "chain_subscribeAllHeads";
 pub const chain_unsubscribeAllHeads: &str = "chain_unsubscribeAllHeads";
 pub const chain_allHead: &str = "chain_allHead";
