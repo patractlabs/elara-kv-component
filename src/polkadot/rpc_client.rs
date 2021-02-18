@@ -5,11 +5,13 @@ use crate::polkadot::service::{
 };
 use crate::rpc_client::RpcClient;
 use crate::websocket::{WsConnection, WsConnections};
-use async_jsonrpc_client::{NotificationStream, RpcClientError};
+use async_jsonrpc_client::{SubscriptionNotification, WsClientError, WsSubscription};
 use futures::{Stream, StreamExt};
 use log::*;
 use serde::Serialize;
 use std::fmt::Debug;
+
+type NotificationStream = WsSubscription<SubscriptionNotification>;
 
 /// Polkadot related subscription data
 pub struct SubscribedStream {
@@ -23,7 +25,7 @@ pub struct SubscribedStream {
 
 pub async fn start_subscribe(
     client: &RpcClient,
-) -> Result<SubscribedStream, RpcClientError> {
+) -> Result<SubscribedStream, WsClientError> {
     let storage = client
         .subscribe(consts::state_subscribeStorage, None)
         .await?;

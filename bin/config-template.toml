@@ -1,0 +1,10 @@
+[ws]
+# Elara kv websocket service address
+addr = "localhost:9002"
+
+# polkadot config
+[nodes.polkadot]
+addr = "wss://rpc.polkadot.io"
+# kusama config
+[nodes.kusama]
+addr = "wss://kusama-rpc.polkadot.io"
