@@ -19,6 +19,9 @@ use structopt::StructOpt;
 
 type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
 
+const CONN_EXPIRED_TIME_SECS: u64 = 10;
+const CHECK_CONN_ALIVE_SECS: u64 = 10;
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -68,8 +71,6 @@ async fn main() {
     }
 }
 
-const CONN_EXPIRED_TIME_SECS: u64 = 10;
-
 // we remove unlived connection every 5s
 async fn remove_expired_connections(mut conns: WsConnections) {
     loop {
@@ -109,11 +110,60 @@ async fn create_clients(
             _ => unimplemented!(),
         };
 
+        let client = Arc::new(Mutex::new(client));
+        tokio::spawn(health_check(connections.clone(), client.clone()));
         // maintains these clients
-        clients.insert(node.to_string(), Arc::new(Mutex::new(client)));
+        clients.insert(node.to_string(), client);
     }
 
     Ok(clients)
+}
+
+// if rpc client is not alive, we reconnect to peer
+async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(CHECK_CONN_ALIVE_SECS)).await;
+
+        let mut client = client.lock().await;
+        if !client.is_alive().await {
+            info!("Trying to reconnect to `{}`...", client.node_name());
+            let res = client.reconnect().await;
+
+            let res = match res {
+                Err(err) => Err(err),
+
+                Ok(()) => {
+                    let res = match client.node_name().as_str() {
+                        polkadot::NODE_NAME => {
+                            polkadot::rpc_client::start_subscribe(&*client).await
+                        }
+                        kusama::NODE_NAME => {
+                            kusama::rpc_client::start_subscribe(&*client).await
+                        }
+                        _ => {
+                            unreachable!()
+                        }
+                    };
+                    match res {
+                        Ok(stream) => {
+                            stream.start(connections.clone());
+                            Ok(())
+                        }
+                        Err(err) => Err(err),
+                    }
+                }
+            };
+
+            if let Err(err) = res {
+                warn!(
+                    "Error occurred when reconnect to `{}: {}`: {:?}",
+                    client.node_name(),
+                    client.addr(),
+                    err
+                );
+            }
+        }
+    }
 }
 
 async fn subscribe_polkadot(connections: WsConnections, client: &RpcClient) {

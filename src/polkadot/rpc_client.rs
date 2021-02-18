@@ -76,6 +76,7 @@ async fn send_messages_to_conns<T, S>(
 }
 
 impl SubscribedStream {
+    // TODO: extract it as trait method
     // start to push subscription data to all connections in background
     pub fn start(self, conns: WsConnections) {
         let Self {
