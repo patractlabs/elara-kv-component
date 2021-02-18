@@ -3,7 +3,6 @@ pub use async_jsonrpc_client::WsClientError;
 use async_jsonrpc_client::{PubsubTransport, Transport};
 use async_jsonrpc_client::{SubscriptionNotification, WsClient, WsSubscription};
 use jsonrpc_types::Output;
-use std::fmt::{Display, Formatter};
 
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
 
@@ -12,26 +11,6 @@ pub struct RpcClient {
     ws: WsClient,
     node: String,
     addr: String,
-}
-
-pub enum Node {
-    Polkadot,
-    Kusama,
-}
-
-impl Display for Node {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Node::Polkadot => write!(f, "{}", crate::polkadot::NODE_NAME),
-            Node::Kusama => write!(f, "{}", crate::kusama::NODE_NAME),
-        }
-    }
-}
-
-impl From<Node> for String {
-    fn from(n: Node) -> Self {
-        format!("{}", n).to_string()
-    }
 }
 
 impl RpcClient {
