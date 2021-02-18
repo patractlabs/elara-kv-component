@@ -23,7 +23,7 @@ jsonrpc-pubsub = "17.0"
 thiserror = "1.0"
 once_cell = "1.5"
 tokio-tungstenite = { version = "0.13", features = ["connect", "tls", "stream"]}
-async-jsonrpc-client = { git = "https://github.com/koushiro/async-jsonrpc-client", branch = "master"}
+async-jsonrpc-client = "0.3.0-beta.1"
 jsonrpc-types = "^0.3.2"
 structopt = "0.3"
 #tokio-stream = "0.1"

@@ -1,13 +1,13 @@
-use crate::message::{Params, SubscribedSuccess};
-pub use async_jsonrpc_client::RpcClientError;
-use async_jsonrpc_client::WsTransport;
-use async_jsonrpc_client::{NotificationStream, PubsubTransport, Transport};
+use crate::message::Params;
+use async_jsonrpc_client::PubsubTransport;
+pub use async_jsonrpc_client::WsClientError;
+use async_jsonrpc_client::{SubscriptionNotification, WsClient, WsSubscription};
 
-pub type Result<T, E = RpcClientError> = std::result::Result<T, E>;
+pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
 
 /// RpcClient is used to subscribe some data from different chain node.
 pub struct RpcClient {
-    ws: WsTransport,
+    ws: WsClient,
     node: String,
     addr: String,
 }
@@ -15,7 +15,7 @@ pub struct RpcClient {
 impl RpcClient {
     pub async fn new(node: String, addr: impl Into<String>) -> Result<Self> {
         let addr = addr.into();
-        let ws = WsTransport::new(addr.as_str()).await?;
+        let ws = WsClient::new(addr.as_str()).await?;
 
         Ok(Self { node, ws, addr })
     }
@@ -29,23 +29,15 @@ impl RpcClient {
     }
 
     /// subscribe a data from chain node, return a stream for it.
-    pub async fn subscribe(
+    pub async fn subscribe<M>(
         &self,
-        method: impl Into<String> + Send,
+        subscribe_method: M,
         params: Option<Params>,
-    ) -> Result<NotificationStream> {
-        let res = Transport::send(&self.ws, method, params).await;
-
-        match res {
-            Err(err) => Err(err),
-            Ok(v) => {
-                let v = serde_json::to_string(&v)
-                    .expect("encode response message back to json string");
-                // get the subscription id
-                let res: SubscribedSuccess = serde_json::from_str(&v)?;
-                let notifies = PubsubTransport::subscribe(&self.ws, res.result)?;
-                Ok(notifies)
-            }
-        }
+    ) -> Result<WsSubscription<SubscriptionNotification>, WsClientError>
+    where
+        M: Into<String> + Send,
+    {
+        let res = PubsubTransport::subscribe(&self.ws, subscribe_method, params).await?;
+        Ok(res.1)
     }
 }
