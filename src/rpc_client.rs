@@ -1,7 +1,8 @@
 use crate::message::Params;
-use async_jsonrpc_client::PubsubTransport;
 pub use async_jsonrpc_client::WsClientError;
+use async_jsonrpc_client::{PubsubTransport, Transport};
 use async_jsonrpc_client::{SubscriptionNotification, WsClient, WsSubscription};
+use jsonrpc_types::Output;
 
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
 
@@ -26,6 +27,21 @@ impl RpcClient {
 
     pub fn node_name(&self) -> String {
         self.node.clone()
+    }
+
+    #[inline]
+    pub async fn system_health(&self) -> Result<Output> {
+        self.ws.request("system_health", None).await
+    }
+
+    pub async fn is_alive(&self) -> bool {
+        self.system_health().await.is_ok()
+    }
+
+    // After `reconnect`ed, client need to re`subscribe`.
+    pub async fn reconnect(&mut self) -> Result<()> {
+        self.ws = WsClient::new(self.addr.as_str()).await?;
+        Ok(())
     }
 
     /// subscribe a data from chain node, return a stream for it.
