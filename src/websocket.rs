@@ -9,6 +9,7 @@ use core::result;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -36,6 +37,17 @@ pub struct WsConnection {
     chain_handlers: Arc<RwLock<HashMap<&'static str, Box<dyn MessageHandler>>>>,
 
     pub sessions: ConnectionSessions,
+}
+
+impl Display for WsConnection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "wsConnection(addr:{}, closed:{})",
+            self.addr,
+            self.closed.load(Ordering::SeqCst)
+        )
+    }
 }
 
 #[derive(Clone)]

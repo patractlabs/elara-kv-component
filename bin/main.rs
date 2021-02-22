@@ -45,7 +45,6 @@ async fn main() {
     let mut connections = WsConnections::new();
     tokio::spawn(remove_expired_connections(connections.clone()));
 
-    // TODO: impl the logic of re-connection
     let _clients = create_clients(&cfg, connections.clone())
         .await
         .expect("Cannot subscribe node");
@@ -54,7 +53,6 @@ async fn main() {
     loop {
         match server.accept(cfg.clone()).await {
             Ok(conn) => {
-                // TODO: add config for chain
                 connections.add(conn.clone()).await;
 
                 // We register the configured node handlers here
@@ -76,6 +74,7 @@ async fn remove_expired_connections(mut conns: WsConnections) {
     loop {
         let mut expired = vec![];
         for (addr, conn) in conns.inner().read().await.iter() {
+            debug!("{}", conn);
             if conn.closed() {
                 expired.push(*addr);
             }
@@ -250,5 +249,6 @@ async fn handle_connection(connection: WsConnection) {
         }
     }
 
+    connection.close();
     info!("Closed connection to peer {}", connection.addr());
 }

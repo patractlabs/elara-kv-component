@@ -193,10 +193,6 @@ async fn send_message(conn: WsConnection, msg: String, data_type: &'static str) 
     let res = conn.send_message(Message::Text(msg)).await;
     // we need to cleanup unlived conn outside
     if let Err(err) = res {
-        if let Error::ConnectionClosed = err {
-            conn.close();
-        }
-
         warn!(
             "Error occurred when send {} data to peer `{}`: {:?}",
             data_type,
