@@ -2,7 +2,7 @@
 //! Send subscribed data to user according to subscription sessions
 use crate::kusama::session::GrandpaJustificationSessions;
 use crate::message::{
-    serialize_subscribed_message, Id, SubscriptionNotification,
+    serialize_success_response, Id, SubscriptionNotification,
     SubscriptionNotificationParams, Version,
 };
 use crate::polkadot::consts;
@@ -21,7 +21,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio_tungstenite::tungstenite::error::Error;
 use tokio_tungstenite::tungstenite::Message;
 
 /// According to some states or sessions, we transform some data from chain node to new suitable values.
@@ -189,23 +188,6 @@ impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
     }
 }
 
-async fn send_message(conn: WsConnection, msg: String, data_type: &'static str) {
-    let res = conn.send_message(Message::Text(msg)).await;
-    // we need to cleanup unlived conn outside
-    if let Err(err) = res {
-        if let Error::ConnectionClosed = err {
-            conn.close();
-        }
-
-        warn!(
-            "Error occurred when send {} data to peer `{}`: {:?}",
-            data_type,
-            conn.addr(),
-            err
-        );
-    };
-}
-
 // The followings are used to send subscription data to users
 
 async fn send_subscription_data<ST, Session, Input>(
@@ -220,8 +202,18 @@ async fn send_subscription_data<ST, Session, Input>(
     for (subscription_id, session) in sessions.read().await.iter() {
         let data = ST::transform(session, subscription_id.clone().into(), data.clone());
         // two level json
-        let msg = serialize_subscribed_message(session, &data);
-        send_message(conn.clone(), msg, ST::METHOD).await;
+        let msg = serialize_success_response(session, &data);
+        let res = conn.send_message(Message::Text(msg)).await;
+        // we need to cleanup unlived conn outside
+        if let Err(err) = res {
+            warn!(
+                "Error occurred when send {} data to peer `{}`: {:?}",
+                ST::METHOD,
+                conn.addr(),
+                err
+            );
+            return;
+        }
     }
 }
 
