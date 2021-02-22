@@ -252,7 +252,22 @@ impl_from_num!(u16);
 impl_from_num!(u32);
 impl_from_num!(u64);
 
-pub fn serialize_elara_api<T, S>(session: &S, data: &T) -> String
+pub fn serialize_success_response<T, S>(session: &S, result: &T) -> String
+where
+    T: Serialize,
+    S: ISession,
+{
+    let result = serde_json::to_string(&result).expect("serialize a substrate jsonrpc");
+    let msg = ResponseMessage {
+        id: Some(session.client_id()),
+        chain: Some(session.chain_name()),
+        error: None,
+        result: Some(result),
+    };
+    serde_json::to_string(&msg).expect("serialize a elara api")
+}
+
+pub fn serialize_subscribed_message<T, S>(session: &S, data: &T) -> String
 where
     T: Serialize,
     S: ISession,

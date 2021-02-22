@@ -2,8 +2,8 @@
 //! Send subscribed data to user according to subscription sessions
 use crate::kusama::session::GrandpaJustificationSessions;
 use crate::message::{
-    serialize_elara_api, Id, SubscriptionNotification, SubscriptionNotificationParams,
-    Version,
+    serialize_subscribed_message, Id, SubscriptionNotification,
+    SubscriptionNotificationParams, Version,
 };
 use crate::polkadot::consts;
 use crate::polkadot::rpc_api::chain::ChainHead;
@@ -220,7 +220,7 @@ async fn send_subscription_data<ST, Session, Input>(
     for (subscription_id, session) in sessions.read().await.iter() {
         let data = ST::transform(session, subscription_id.clone().into(), data.clone());
         // two level json
-        let msg = serialize_elara_api(session, &data);
+        let msg = serialize_subscribed_message(session, &data);
         send_message(conn.clone(), msg, ST::METHOD).await;
     }
 }
