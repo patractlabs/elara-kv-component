@@ -2,7 +2,10 @@
 //! Set sessions according to user's subscription request
 
 use super::session::{StorageKeys, StorageSessions};
-use crate::message::{Error, Failure, MethodCall, Params, ResponseMessage, Success, Value, Version, serialize_success_response};
+use crate::message::{
+    serialize_success_response, Error, Failure, MethodCall, Params, ResponseMessage,
+    Success, Value, Version,
+};
 use crate::polkadot::consts;
 use crate::polkadot::session::{
     AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,

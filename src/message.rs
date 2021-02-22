@@ -253,9 +253,9 @@ impl_from_num!(u32);
 impl_from_num!(u64);
 
 pub fn serialize_success_response<T, S>(session: &S, result: &T) -> String
-    where
-        T: Serialize,
-        S: ISession,
+where
+    T: Serialize,
+    S: ISession,
 {
     let result = serde_json::to_string(&result).expect("serialize a substrate jsonrpc");
     let msg = ResponseMessage {
