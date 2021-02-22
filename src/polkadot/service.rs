@@ -2,7 +2,7 @@
 //! Send subscribed data to user according to subscription sessions
 use crate::kusama::session::GrandpaJustificationSessions;
 use crate::message::{
-    serialize_success_response, Id, SubscriptionNotification,
+    serialize_subscribed_message, Id, SubscriptionNotification,
     SubscriptionNotificationParams, Version,
 };
 use crate::polkadot::consts;
@@ -202,7 +202,7 @@ async fn send_subscription_data<ST, Session, Input>(
     for (subscription_id, session) in sessions.read().await.iter() {
         let data = ST::transform(session, subscription_id.clone().into(), data.clone());
         // two level json
-        let msg = serialize_success_response(session, &data);
+        let msg = serialize_subscribed_message(session, &data);
         let res = conn.send_message(Message::Text(msg)).await;
         // we need to cleanup unlived conn outside
         if let Err(err) = res {
