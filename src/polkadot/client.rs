@@ -2,10 +2,7 @@
 //! Set sessions according to user's subscription request
 
 use super::session::{StorageKeys, StorageSessions};
-use crate::message::{
-    serialize_elara_api, Error, Failure, MethodCall, Params, ResponseMessage, Success,
-    Value, Version,
-};
+use crate::message::{Error, Failure, MethodCall, Params, ResponseMessage, Success, Value, Version, serialize_success_response};
 use crate::polkadot::consts;
 use crate::polkadot::session::{
     AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
@@ -244,8 +241,8 @@ async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
         let res = handle(sessions.borrow_mut(), session.clone(), request);
 
         let res = res
-            .map(|success| serialize_elara_api(&session, &success))
-            .map_err(|err| serialize_elara_api(&session, &err));
+            .map(|success| serialize_success_response(&session, &success))
+            .map_err(|err| serialize_success_response(&session, &err));
         let msg = match res {
             Ok(s) => s,
             Err(s) => s,
