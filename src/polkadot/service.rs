@@ -2,8 +2,8 @@
 //! Send subscribed data to user according to subscription sessions
 use crate::kusama::session::GrandpaJustificationSessions;
 use crate::message::{
-    serialize_success_response, Id, SubscriptionNotification, SubscriptionNotificationParams,
-    Version,
+    serialize_success_response, Id, SubscriptionNotification,
+    SubscriptionNotificationParams, Version,
 };
 use crate::polkadot::consts;
 use crate::polkadot::rpc_api::chain::ChainHead;
