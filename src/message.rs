@@ -30,11 +30,7 @@ pub struct ResponseMessage {
 }
 
 impl ResponseMessage {
-    pub fn result_response(
-        id: Option<String>,
-        chain: Option<String>,
-        result: String,
-    ) -> Self {
+    pub fn result_response(id: Option<String>, chain: Option<String>, result: String) -> Self {
         Self {
             id,
             chain,
@@ -43,11 +39,7 @@ impl ResponseMessage {
         }
     }
 
-    pub fn error_response(
-        id: Option<String>,
-        chain: Option<String>,
-        err: ErrorMessage,
-    ) -> Self {
+    pub fn error_response(id: Option<String>, chain: Option<String>, err: ErrorMessage) -> Self {
         Self {
             id,
             chain,

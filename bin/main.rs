@@ -90,10 +90,7 @@ async fn remove_expired_connections(mut conns: WsConnections) {
     }
 }
 
-async fn create_clients(
-    cfg: &Config,
-    connections: WsConnections,
-) -> rpc_client::Result<WsClients> {
+async fn create_clients(cfg: &Config, connections: WsConnections) -> rpc_client::Result<WsClients> {
     let mut clients: WsClients = Default::default();
     // started to subscribe chain node by ws client
     for (node, cfg) in cfg.nodes.iter() {
@@ -136,9 +133,7 @@ async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>)
                         polkadot::NODE_NAME => {
                             polkadot::rpc_client::start_subscribe(&*client).await
                         }
-                        kusama::NODE_NAME => {
-                            kusama::rpc_client::start_subscribe(&*client).await
-                        }
+                        kusama::NODE_NAME => kusama::rpc_client::start_subscribe(&*client).await,
                         _ => {
                             unreachable!()
                         }

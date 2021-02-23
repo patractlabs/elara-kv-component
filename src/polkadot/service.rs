@@ -2,8 +2,8 @@
 //! Send subscribed data to user according to subscription sessions
 use crate::kusama::session::GrandpaJustificationSessions;
 use crate::message::{
-    serialize_subscribed_message, Id, SubscriptionNotification,
-    SubscriptionNotificationParams, Version,
+    serialize_subscribed_message, Id, SubscriptionNotification, SubscriptionNotificationParams,
+    Version,
 };
 use crate::polkadot::consts;
 use crate::polkadot::rpc_api::chain::ChainHead;
@@ -32,11 +32,7 @@ pub trait SubscriptionTransformer {
 
     const METHOD: &'static str;
 
-    fn transform(
-        session: &Self::Session,
-        id: Id,
-        input: Self::Input,
-    ) -> Option<Self::Output>;
+    fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output>;
 }
 
 pub struct StateStorageTransformer;
@@ -47,11 +43,7 @@ impl SubscriptionTransformer for StateStorageTransformer {
     type Session = StorageSession;
     const METHOD: &'static str = consts::state_storage;
 
-    fn transform(
-        session: &Self::Session,
-        id: Id,
-        input: Self::Input,
-    ) -> Option<Self::Output> {
+    fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         let (_, keys) = session;
         match keys {
             StorageKeys::All => {
@@ -103,11 +95,7 @@ impl SubscriptionTransformer for StateRuntimeVersionTransformer {
     type Session = RuntimeVersionSession;
     const METHOD: &'static str = consts::state_runtimeVersion;
 
-    fn transform(
-        _session: &Self::Session,
-        id: Id,
-        input: Self::Input,
-    ) -> Option<Self::Output> {
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
@@ -128,11 +116,7 @@ impl SubscriptionTransformer for GrandpaJustificationTransformer {
     type Session = GrandpaJustificationSession;
     const METHOD: &'static str = consts::grandpa_justifications;
 
-    fn transform(
-        _session: &Self::Session,
-        id: Id,
-        input: Self::Input,
-    ) -> Option<Self::Output> {
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
@@ -153,11 +137,7 @@ impl SubscriptionTransformer for ChainAllHeadTransformer {
     type Session = AllHeadSession;
     const METHOD: &'static str = consts::chain_allHead;
 
-    fn transform(
-        _session: &Self::Session,
-        id: Id,
-        input: Self::Input,
-    ) -> Option<Self::Output> {
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
@@ -178,11 +158,7 @@ impl SubscriptionTransformer for ChainNewHeadTransformer {
     type Session = NewHeadSession;
     const METHOD: &'static str = consts::chain_newHead;
 
-    fn transform(
-        _session: &Self::Session,
-        id: Id,
-        input: Self::Input,
-    ) -> Option<Self::Output> {
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
@@ -203,11 +179,7 @@ impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
     type Session = FinalizedHeadSession;
     const METHOD: &'static str = consts::chain_finalizedHead;
 
-    fn transform(
-        _session: &Self::Session,
-        id: Id,
-        input: Self::Input,
-    ) -> Option<Self::Output> {
+    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
@@ -270,9 +242,7 @@ pub fn send_state_runtime_version(
     data: RuntimeVersion,
 ) {
     tokio::spawn(
-        send_subscription_data::<StateRuntimeVersionTransformer, _, _>(
-            sessions, conn, data,
-        ),
+        send_subscription_data::<StateRuntimeVersionTransformer, _, _>(sessions, conn, data),
     );
 }
 
@@ -314,8 +284,6 @@ pub fn send_chain_finalized_head(
     data: ChainHead,
 ) {
     tokio::spawn(
-        send_subscription_data::<ChainFinalizedHeadTransformer, _, _>(
-            sessions, conn, data,
-        ),
+        send_subscription_data::<ChainFinalizedHeadTransformer, _, _>(sessions, conn, data),
     );
 }

@@ -3,8 +3,8 @@
 
 use super::session::{StorageKeys, StorageSessions};
 use crate::message::{
-    serialize_success_response, Error, Failure, MethodCall, Params, ResponseMessage,
-    Success, Value, Version,
+    serialize_success_response, Error, Failure, MethodCall, Params, ResponseMessage, Success,
+    Value, Version,
 };
 use crate::polkadot::consts;
 use crate::polkadot::session::{
@@ -39,21 +39,13 @@ impl RequestHandler {
     /// make this ws connection subscribing a polkadot node jsonrpc subscription
     pub fn new(conn: WsConnection) -> Self {
         let (senders, receivers) = method_channel();
-        handle_subscription_response(
-            conn.clone(),
-            conn.sessions.polkadot_sessions,
-            receivers,
-        );
+        handle_subscription_response(conn.clone(), conn.sessions.polkadot_sessions, receivers);
         Self { senders }
     }
 }
 
 impl MessageHandler for RequestHandler {
-    fn handle(
-        &self,
-        session: Session,
-        request: MethodCall,
-    ) -> Result<(), ResponseMessage> {
+    fn handle(&self, session: Session, request: MethodCall) -> Result<(), ResponseMessage> {
         let sender = self
             .senders
             .get(request.method.as_str())
@@ -62,9 +54,7 @@ impl MessageHandler for RequestHandler {
                 error: jsonrpc_types::Error::method_not_found(),
                 id: Some(request.id.clone()),
             })
-            .map_err(|err| {
-                serde_json::to_string(&err).expect("serialize a failure message")
-            })
+            .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
             .map_err(|res| {
                 ResponseMessage::result_response(
                     Some(session.client_id.clone()),
@@ -486,8 +476,7 @@ mod tests {
         )
         .unwrap();
 
-        let success =
-            handle_state_subscribeStorage(&mut sessions, session, request).unwrap();
+        let success = handle_state_subscribeStorage(&mut sessions, session, request).unwrap();
 
         // unsubscribe
         let session = Session {
@@ -503,11 +492,8 @@ mod tests {
             id: Id::Num(2),
         };
 
-        let success = handle_state_unsubscribeStorage(
-            &mut sessions,
-            session.clone(),
-            request.clone(),
-        );
+        let success =
+            handle_state_unsubscribeStorage(&mut sessions, session.clone(), request.clone());
         assert_eq!(
             success,
             Ok(Success {

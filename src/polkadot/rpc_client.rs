@@ -23,9 +23,7 @@ pub struct SubscribedStream {
     grandpa_justifications: NotificationStream,
 }
 
-pub async fn start_subscribe(
-    client: &RpcClient,
-) -> Result<SubscribedStream, WsClientError> {
+pub async fn start_subscribe(client: &RpcClient) -> Result<SubscribedStream, WsClientError> {
     let storage = client
         .subscribe(consts::state_subscribeStorage, None)
         .await?;
@@ -103,10 +101,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!(
-                                "Receive an illegal subscribed data: {}: {}",
-                                err, &data
-                            )
+                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -129,10 +124,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!(
-                                "Receive an illegal subscribed data: {}: {}",
-                                err, &data
-                            )
+                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -155,10 +147,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!(
-                                "Receive an illegal subscribed data: {}: {}",
-                                err, &data
-                            )
+                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -178,10 +167,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!(
-                                "Receive an illegal subscribed data: {}: {}",
-                                err, &data
-                            )
+                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -201,10 +187,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!(
-                                "Receive an illegal subscribed data: {}: {}",
-                                err, &data
-                            )
+                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -227,10 +210,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!(
-                                "Receive an illegal subscribed data: {}: {}",
-                                err, &data
-                            )
+                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
