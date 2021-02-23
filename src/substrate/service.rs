@@ -1,27 +1,34 @@
 //! Service related session handlers.
 //! Send subscribed data to user according to subscription sessions
-use crate::kusama::session::GrandpaJustificationSessions;
-use crate::message::{
-    serialize_subscribed_message, Id, SubscriptionNotification, SubscriptionNotificationParams,
-    Version,
-};
-use crate::polkadot::consts;
-use crate::polkadot::rpc_api::chain::ChainHead;
-use crate::polkadot::rpc_api::grandpa::GrandpaJustification;
-use crate::polkadot::rpc_api::state::{RuntimeVersion, StateStorage};
-use crate::polkadot::session::{
-    AllHeadSession, AllHeadSessions, FinalizedHeadSession, FinalizedHeadSessions,
-    GrandpaJustificationSession, NewHeadSession, NewHeadSessions, RuntimeVersionSession,
-    RuntimeVersionSessions, StorageKeys, StorageSession, StorageSessions,
-};
-use crate::session::{ISession, ISessions, Sessions};
-use crate::websocket::WsConnection;
-use log::*;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+
 use std::sync::Arc;
+
+use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::{
+    message::{
+        serialize_subscribed_message, Id, SubscriptionNotification, SubscriptionNotificationParams,
+        Version,
+    },
+    session::{ISession, ISessions, Sessions},
+    substrate::{
+        constants,
+        rpc::{
+            chain::ChainHead,
+            grandpa::GrandpaJustification,
+            state::{RuntimeVersion, StateStorage},
+        },
+        session::{
+            AllHeadSession, AllHeadSessions, FinalizedHeadSession, FinalizedHeadSessions,
+            GrandpaJustificationSession, GrandpaJustificationSessions, NewHeadSession,
+            NewHeadSessions, RuntimeVersionSession, RuntimeVersionSessions, StorageKeys,
+            StorageSession, StorageSessions,
+        },
+    },
+    websocket::WsConnection,
+};
 
 /// According to some states or sessions, we transform some data from chain node to new suitable values.
 /// Mainly include some simple filtering operations.
@@ -41,7 +48,7 @@ impl SubscriptionTransformer for StateStorageTransformer {
     type Input = StateStorage;
     type Output = SubscriptionNotification<StateStorage>;
     type Session = StorageSession;
-    const METHOD: &'static str = consts::state_storage;
+    const METHOD: &'static str = constants::state_storage;
 
     fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         let (_, keys) = session;
@@ -71,7 +78,7 @@ impl SubscriptionTransformer for StateStorageTransformer {
                 } else {
                     Some(Self::Output {
                         jsonrpc: Version::V2_0,
-                        method: consts::state_storage.to_string(),
+                        method: constants::state_storage.to_string(),
                         params: SubscriptionNotificationParams {
                             result: StateStorage {
                                 block: input.block,
@@ -93,7 +100,7 @@ impl SubscriptionTransformer for StateRuntimeVersionTransformer {
     type Input = RuntimeVersion;
     type Output = SubscriptionNotification<RuntimeVersion>;
     type Session = RuntimeVersionSession;
-    const METHOD: &'static str = consts::state_runtimeVersion;
+    const METHOD: &'static str = constants::state_runtimeVersion;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
@@ -114,7 +121,7 @@ impl SubscriptionTransformer for GrandpaJustificationTransformer {
     type Input = GrandpaJustification;
     type Output = SubscriptionNotification<GrandpaJustification>;
     type Session = GrandpaJustificationSession;
-    const METHOD: &'static str = consts::grandpa_justifications;
+    const METHOD: &'static str = constants::grandpa_justifications;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
@@ -135,7 +142,7 @@ impl SubscriptionTransformer for ChainAllHeadTransformer {
     type Input = ChainHead;
     type Output = SubscriptionNotification<ChainHead>;
     type Session = AllHeadSession;
-    const METHOD: &'static str = consts::chain_allHead;
+    const METHOD: &'static str = constants::chain_allHead;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
@@ -156,7 +163,7 @@ impl SubscriptionTransformer for ChainNewHeadTransformer {
     type Input = ChainHead;
     type Output = SubscriptionNotification<ChainHead>;
     type Session = NewHeadSession;
-    const METHOD: &'static str = consts::chain_newHead;
+    const METHOD: &'static str = constants::chain_newHead;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
@@ -177,7 +184,7 @@ impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
     type Input = ChainHead;
     type Output = SubscriptionNotification<ChainHead>;
     type Session = FinalizedHeadSession;
-    const METHOD: &'static str = consts::chain_finalizedHead;
+    const METHOD: &'static str = constants::chain_finalizedHead;
 
     fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
         Some(Self::Output {
@@ -213,7 +220,7 @@ async fn send_subscription_data<ST, Session, Input>(
                 let res = conn.send_message(Message::Text(msg)).await;
                 // we need to cleanup unlived conn outside
                 if let Err(err) = res {
-                    warn!(
+                    log::warn!(
                         "Error occurred when send {} data to peer `{}`: {:?}",
                         ST::METHOD,
                         conn.addr(),

@@ -1,22 +1,37 @@
-use crate::config::{Config, NodeConfig};
-use crate::message::{ErrorMessage, Failure, MethodCall, RequestMessage, ResponseMessage, Version};
-use crate::polkadot;
-use crate::session::Session;
+use std::{
+    collections::HashMap,
+    fmt,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
-use core::result;
-use futures::stream::{SplitSink, SplitStream};
-use futures::{SinkExt, StreamExt};
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
-use tokio::sync::{Mutex, RwLock};
-use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use tokio_tungstenite::tungstenite::protocol::CloseFrame;
-use tokio_tungstenite::{accept_async, tungstenite, WebSocketStream};
-use tungstenite::Message;
+use async_jsonrpc_client::Error;
+use futures::{
+    sink::SinkExt,
+    stream::{SplitSink, SplitStream, StreamExt},
+};
+use tokio::{
+    net::{TcpListener, TcpStream, ToSocketAddrs},
+    sync::{Mutex, RwLock},
+};
+use tokio_tungstenite::{
+    accept_async,
+    tungstenite::{
+        self,
+        protocol::{frame::coding::CloseCode, CloseFrame, Message},
+    },
+    WebSocketStream,
+};
+
+use crate::{
+    config::{Config, NodeConfig},
+    message::{ErrorMessage, Failure, MethodCall, RequestMessage, ResponseMessage, Version},
+    session::Session,
+    substrate,
+};
 
 /// A wrapper for WebSocketStream Server
 #[derive(Debug)]
@@ -37,8 +52,8 @@ pub struct WsConnection {
     pub sessions: ConnectionSessions,
 }
 
-impl Display for WsConnection {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+impl fmt::Display for WsConnection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "wsConnection(addr:{}, closed:{})",
@@ -55,7 +70,7 @@ pub struct WsConnections {
 
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionSessions {
-    pub polkadot_sessions: polkadot::session::SubscriptionSessions,
+    pub polkadot_sessions: substrate::session::SubscriptionSessions,
 }
 
 /// Handle specified chain's subscription request
@@ -64,11 +79,7 @@ pub trait MessageHandler: Send + Sync {
 
     /// When the result is Ok, it means to send it to corresponding subscription channel to handle it.
     /// When the result is Err, it means to response the err to peer.
-    fn handle(
-        &self,
-        session: Session,
-        request: MethodCall,
-    ) -> std::result::Result<(), ResponseMessage>;
+    fn handle(&self, session: Session, request: MethodCall) -> Result<(), ResponseMessage>;
 }
 
 pub type WsSender = SplitSink<WebSocketStream<TcpStream>, Message>;
@@ -123,10 +134,7 @@ impl Default for WsConnections {
     }
 }
 
-fn validate_chain(
-    nodes: &HashMap<String, NodeConfig>,
-    chain: &str,
-) -> result::Result<(), ErrorMessage> {
+fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &str) -> Result<(), ErrorMessage> {
     if nodes.contains_key(chain) {
         Ok(())
     } else {
@@ -213,10 +221,7 @@ impl WsConnection {
     // when result is ok, it means to send it to corresponding subscription channel to handle it.
     // When result is err, it means to response the err to peer.
     // The error is elara error code, not jsonrpc error.
-    async fn _handle_message(
-        &self,
-        msg: impl Into<String>,
-    ) -> std::result::Result<(), ResponseMessage> {
+    async fn _handle_message(&self, msg: impl Into<String>) -> Result<(), ResponseMessage> {
         let msg = msg.into();
         let msg: RequestMessage = serde_json::from_str(msg.as_str()).map_err(|_| {
             ResponseMessage::error_response(None, None, ErrorMessage::parse_error())
@@ -230,7 +235,7 @@ impl WsConnection {
         let request = serde_json::from_str::<MethodCall>(&msg.request)
             .map_err(|_| Failure {
                 jsonrpc: Version::V2_0,
-                error: jsonrpc_types::Error::parse_error(),
+                error: Error::parse_error(),
                 id: None,
             })
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))

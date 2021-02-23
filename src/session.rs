@@ -1,9 +1,11 @@
-use crate::message::{RequestMessage, SubscriptionId};
-use std::collections::hash_map::Iter;
-use std::collections::HashMap;
+use std::{
+    collections::hash_map::{HashMap, Iter},
+    fmt::Debug,
+};
 
 pub use jsonrpc_pubsub::manager::{IdProvider, NumericIdProvider, RandomStringIdProvider};
-use std::fmt::Debug;
+
+use crate::message::{RequestMessage, SubscriptionId};
 
 pub trait ISession: Default + Clone + Send + Sync + Debug {
     fn chain_name(&self) -> String;
