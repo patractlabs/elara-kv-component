@@ -1,7 +1,5 @@
 use crate::config::{Config, NodeConfig};
-use crate::message::{
-    ErrorMessage, Failure, MethodCall, RequestMessage, ResponseMessage, Version,
-};
+use crate::message::{ErrorMessage, Failure, MethodCall, RequestMessage, ResponseMessage, Version};
 use crate::polkadot;
 use crate::session::Session;
 
@@ -225,11 +223,7 @@ impl WsConnection {
         })?;
 
         validate_chain(&self.cfg.nodes, &msg.chain).map_err(|err| {
-            ResponseMessage::error_response(
-                Some(msg.id.clone()),
-                Some(msg.chain.clone()),
-                err,
-            )
+            ResponseMessage::error_response(Some(msg.id.clone()), Some(msg.chain.clone()), err)
         })?;
 
         let session: Session = Session::from(&msg);
@@ -239,9 +233,7 @@ impl WsConnection {
                 error: jsonrpc_types::Error::parse_error(),
                 id: None,
             })
-            .map_err(|err| {
-                serde_json::to_string(&err).expect("serialize a failure message")
-            })
+            .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
             .map_err(|res| ResponseMessage {
                 id: Some(msg.id.clone()),
                 chain: Some(msg.chain.clone()),
@@ -253,16 +245,11 @@ impl WsConnection {
 
         let handler = chain_handlers.get(msg.chain.as_str());
 
-        let handler =
-            handler
-                .ok_or_else(ErrorMessage::chain_not_found)
-                .map_err(|err| {
-                    ResponseMessage::error_response(
-                        Some(msg.id.clone()),
-                        Some(msg.chain.clone()),
-                        err,
-                    )
-                })?;
+        let handler = handler
+            .ok_or_else(ErrorMessage::chain_not_found)
+            .map_err(|err| {
+                ResponseMessage::error_response(Some(msg.id.clone()), Some(msg.chain.clone()), err)
+            })?;
         handler.handle(session, request)
     }
 
@@ -279,10 +266,7 @@ impl WsConnection {
 
     /// Send successful response in other channel handler.
     /// The error result represents error occurred when send response
-    pub async fn handle_message(
-        &self,
-        msg: impl Into<String>,
-    ) -> tungstenite::Result<()> {
+    pub async fn handle_message(&self, msg: impl Into<String>) -> tungstenite::Result<()> {
         let res = self._handle_message(msg).await;
         match res {
             // send no rpc error response in here

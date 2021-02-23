@@ -2,9 +2,7 @@ use crate::message::{RequestMessage, SubscriptionId};
 use std::collections::hash_map::Iter;
 use std::collections::HashMap;
 
-pub use jsonrpc_pubsub::manager::{
-    IdProvider, NumericIdProvider, RandomStringIdProvider,
-};
+pub use jsonrpc_pubsub::manager::{IdProvider, NumericIdProvider, RandomStringIdProvider};
 use std::fmt::Debug;
 
 pub trait ISession: Default + Clone + Send + Sync + Debug {
