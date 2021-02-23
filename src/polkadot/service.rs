@@ -32,7 +32,11 @@ pub trait SubscriptionTransformer {
 
     const METHOD: &'static str;
 
-    fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Self::Output;
+    fn transform(
+        session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<Self::Output>;
 }
 
 pub struct StateStorageTransformer;
@@ -43,11 +47,15 @@ impl SubscriptionTransformer for StateStorageTransformer {
     type Session = StorageSession;
     const METHOD: &'static str = consts::state_storage;
 
-    fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
+    fn transform(
+        session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<Self::Output> {
         let (_, keys) = session;
         match keys {
             StorageKeys::All => {
-                Self::Output {
+                Some(Self::Output {
                     jsonrpc: Version::V2_0,
                     method: Self::METHOD.to_string(),
                     params: SubscriptionNotificationParams {
@@ -55,7 +63,7 @@ impl SubscriptionTransformer for StateStorageTransformer {
                         // we maintains the subscription id
                         subscription: id,
                     },
-                }
+                })
             }
 
             StorageKeys::Some(ref keys) => {
@@ -66,17 +74,21 @@ impl SubscriptionTransformer for StateStorageTransformer {
                     .filter(|(key, _)| keys.contains(key))
                     .collect();
 
-                Self::Output {
-                    jsonrpc: Version::V2_0,
-                    method: consts::state_storage.to_string(),
-                    params: SubscriptionNotificationParams {
-                        result: StateStorage {
-                            block: input.block,
-                            changes: filtered_data,
+                if filtered_data.is_empty() {
+                    None
+                } else {
+                    Some(Self::Output {
+                        jsonrpc: Version::V2_0,
+                        method: consts::state_storage.to_string(),
+                        params: SubscriptionNotificationParams {
+                            result: StateStorage {
+                                block: input.block,
+                                changes: filtered_data,
+                            },
+                            // we maintains the subscription id
+                            subscription: id,
                         },
-                        // we maintains the subscription id
-                        subscription: id,
-                    },
+                    })
                 }
             }
         }
@@ -91,8 +103,12 @@ impl SubscriptionTransformer for StateRuntimeVersionTransformer {
     type Session = RuntimeVersionSession;
     const METHOD: &'static str = consts::state_runtimeVersion;
 
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
-        Self::Output {
+    fn transform(
+        _session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<Self::Output> {
+        Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
             params: SubscriptionNotificationParams {
@@ -100,7 +116,7 @@ impl SubscriptionTransformer for StateRuntimeVersionTransformer {
                 // we maintains the subscription id
                 subscription: id,
             },
-        }
+        })
     }
 }
 
@@ -112,8 +128,12 @@ impl SubscriptionTransformer for GrandpaJustificationTransformer {
     type Session = GrandpaJustificationSession;
     const METHOD: &'static str = consts::grandpa_justifications;
 
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
-        Self::Output {
+    fn transform(
+        _session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<Self::Output> {
+        Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
             params: SubscriptionNotificationParams {
@@ -121,7 +141,7 @@ impl SubscriptionTransformer for GrandpaJustificationTransformer {
                 // we maintains the subscription id
                 subscription: id,
             },
-        }
+        })
     }
 }
 
@@ -133,8 +153,12 @@ impl SubscriptionTransformer for ChainAllHeadTransformer {
     type Session = AllHeadSession;
     const METHOD: &'static str = consts::chain_allHead;
 
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
-        Self::Output {
+    fn transform(
+        _session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<Self::Output> {
+        Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
             params: SubscriptionNotificationParams {
@@ -142,7 +166,7 @@ impl SubscriptionTransformer for ChainAllHeadTransformer {
                 // we maintains the subscription id
                 subscription: id,
             },
-        }
+        })
     }
 }
 
@@ -154,8 +178,12 @@ impl SubscriptionTransformer for ChainNewHeadTransformer {
     type Session = NewHeadSession;
     const METHOD: &'static str = consts::chain_newHead;
 
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
-        Self::Output {
+    fn transform(
+        _session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<Self::Output> {
+        Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
             params: SubscriptionNotificationParams {
@@ -163,7 +191,7 @@ impl SubscriptionTransformer for ChainNewHeadTransformer {
                 // we maintains the subscription id
                 subscription: id,
             },
-        }
+        })
     }
 }
 
@@ -175,8 +203,12 @@ impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
     type Session = FinalizedHeadSession;
     const METHOD: &'static str = consts::chain_finalizedHead;
 
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Self::Output {
-        Self::Output {
+    fn transform(
+        _session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<Self::Output> {
+        Some(Self::Output {
             jsonrpc: Version::V2_0,
             method: Self::METHOD.to_string(),
             params: SubscriptionNotificationParams {
@@ -184,7 +216,7 @@ impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
                 // we maintains the subscription id
                 subscription: id,
             },
-        }
+        })
     }
 }
 
@@ -201,18 +233,23 @@ async fn send_subscription_data<ST, Session, Input>(
 {
     for (subscription_id, session) in sessions.read().await.iter() {
         let data = ST::transform(session, subscription_id.clone().into(), data.clone());
-        // two level json
-        let msg = serialize_subscribed_message(session, &data);
-        let res = conn.send_message(Message::Text(msg)).await;
-        // we need to cleanup unlived conn outside
-        if let Err(err) = res {
-            warn!(
-                "Error occurred when send {} data to peer `{}`: {:?}",
-                ST::METHOD,
-                conn.addr(),
-                err
-            );
-            return;
+        match data {
+            None => {}
+            Some(data) => {
+                // two level json
+                let msg = serialize_subscribed_message(session, &data);
+                let res = conn.send_message(Message::Text(msg)).await;
+                // we need to cleanup unlived conn outside
+                if let Err(err) = res {
+                    warn!(
+                        "Error occurred when send {} data to peer `{}`: {:?}",
+                        ST::METHOD,
+                        conn.addr(),
+                        err
+                    );
+                    return;
+                }
+            }
         }
     }
 }
