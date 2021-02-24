@@ -3,18 +3,20 @@ use async_jsonrpc_client::{
     WsSubscription,
 };
 
+use crate::Chain;
+
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
 pub type NotificationStream = WsSubscription<SubscriptionNotification>;
 
 /// RpcClient is used to subscribe some data from different chain node.
 pub struct RpcClient {
     ws: WsClient,
-    node: String,
+    node: Chain,
     addr: String,
 }
 
 impl RpcClient {
-    pub async fn new(node: String, addr: impl Into<String>) -> Result<Self> {
+    pub async fn new(node: Chain, addr: impl Into<String>) -> Result<Self> {
         let addr = addr.into();
         let ws = WsClient::new(addr.as_str()).await?;
 
@@ -25,8 +27,8 @@ impl RpcClient {
         self.addr.clone()
     }
 
-    pub fn node_name(&self) -> String {
-        self.node.clone()
+    pub fn node_name(&self) -> Chain {
+        self.node
     }
 
     #[inline]

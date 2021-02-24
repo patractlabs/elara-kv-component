@@ -4,7 +4,7 @@ addr = "localhost:9002"
 
 # polkadot config
 [nodes.polkadot]
-addr = "wss://rpc.polkadot.io"
+url = "wss://rpc.polkadot.io"
 # kusama config
 [nodes.kusama]
-addr = "wss://kusama-rpc.polkadot.io"
+url = "wss://kusama-rpc.polkadot.io"

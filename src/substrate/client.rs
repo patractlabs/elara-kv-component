@@ -215,6 +215,7 @@ mod tests {
     use super::*;
     use crate::message::{Id, Params, Success};
     use crate::session::Sessions;
+    use crate::Chain;
 
     #[allow(non_snake_case)]
     #[tokio::test]
@@ -223,7 +224,7 @@ mod tests {
 
         // subscribe
         let session = Session {
-            chain_name: "test-net".to_string(),
+            chain: Chain::Polkadot,
             client_id: "0x1".to_string(),
         };
 
@@ -243,7 +244,7 @@ mod tests {
 
         // unsubscribe
         let session = Session {
-            chain_name: "test-net".to_string(),
+            chain: Chain::Polkadot,
             client_id: "0x2".to_string(),
         };
         let request = MethodCall::new(

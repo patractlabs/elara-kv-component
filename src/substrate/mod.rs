@@ -5,15 +5,6 @@ pub mod rpc_client;
 mod service;
 pub mod session;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Node {
-    Polkadot,
-    Kusama,
-}
-
 #[allow(non_upper_case_globals)]
 pub mod constants {
     pub const state_subscribeStorage: &str = "state_subscribeStorage";

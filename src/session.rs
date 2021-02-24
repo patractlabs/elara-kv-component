@@ -5,10 +5,13 @@ use std::{
 
 pub use jsonrpc_pubsub::manager::{IdProvider, NumericIdProvider, RandomStringIdProvider};
 
-use crate::message::{ElaraRequest, Id};
+use crate::{
+    message::{ElaraRequest, Id},
+    Chain,
+};
 
 pub trait ISession: Default + Clone + Send + Sync + Debug {
-    fn chain_name(&self) -> String;
+    fn chain(&self) -> Chain;
 
     fn client_id(&self) -> String;
 }
@@ -16,14 +19,13 @@ pub trait ISession: Default + Clone + Send + Sync + Debug {
 /// Session as a subscription session
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Session {
-    // TODO: remove chain_name?
-    pub chain_name: String,
+    pub chain: Chain,
     pub client_id: String,
 }
 
 impl ISession for Session {
-    fn chain_name(&self) -> String {
-        self.chain_name.clone()
+    fn chain(&self) -> Chain {
+        self.chain
     }
 
     fn client_id(&self) -> String {
@@ -34,7 +36,7 @@ impl ISession for Session {
 impl From<&ElaraRequest> for Session {
     fn from(msg: &ElaraRequest) -> Self {
         Self {
-            chain_name: msg.chain.clone(),
+            chain: msg.chain,
             client_id: msg.id.clone(),
         }
     }
