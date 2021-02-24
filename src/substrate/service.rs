@@ -211,7 +211,7 @@ async fn send_subscription_data<ST, Session, Input>(
     ST: SubscriptionTransformer<Session = Session, Input = Input>,
 {
     for (subscription_id, session) in sessions.read().await.iter() {
-        let data = ST::transform(session, subscription_id.clone().into(), data.clone());
+        let data = ST::transform(session, subscription_id.clone(), data.clone());
         match data {
             None => {}
             Some(data) => {

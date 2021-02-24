@@ -15,8 +15,8 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     message::{
-        serialize_success_response, Error, Failure, MethodCall, Params, ResponseMessage, Success,
-        Value, Version,
+        serialize_success_response, ElaraResponse, Error, Failure, Id, MethodCall, Params, Success,
+        Value,
     },
     session::{ISessions, NoParamSessions, Session, Sessions},
     substrate::{
@@ -50,22 +50,14 @@ impl RequestHandler {
 }
 
 impl MessageHandler for RequestHandler {
-    fn handle(&self, session: Session, request: MethodCall) -> Result<(), ResponseMessage> {
+    fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse> {
         let sender = self
             .senders
             .get(request.method.as_str())
-            .ok_or(Failure {
-                jsonrpc: Version::V2_0,
-                error: Error::method_not_found(),
-                id: Some(request.id.clone()),
-            })
+            .ok_or_else(|| Failure::new(Error::method_not_found(), Some(request.id.clone())))
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
             .map_err(|res| {
-                ResponseMessage::result_response(
-                    Some(session.client_id.clone()),
-                    Some(session.chain_name.clone()),
-                    res,
-                )
+                ElaraResponse::success(session.client_id.clone(), session.chain_name.clone(), res)
             })?;
 
         let method = request.method.clone();
@@ -344,11 +336,11 @@ fn handle_state_subscribeStorage(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), (session, storage_keys));
-    Ok(Success {
-        jsonrpc: Version::V2_0,
-        result: Value::from(id),
-        id: request.id,
-    })
+    let result = match id {
+        Id::Num(id) => Value::Number(id.into()),
+        Id::Str(id) => Value::String(id),
+    };
+    Ok(Success::new(result, request.id))
 }
 
 #[allow(non_snake_case)]
@@ -417,11 +409,7 @@ fn handle_unsubscribe<T>(
 ) -> Result<Success, Error> {
     let params = request.params.unwrap_or_default().parse::<(String,)>()?;
     let subscribed = sessions.remove(&params.0.into()).is_some();
-    Ok(Success {
-        jsonrpc: Version::V2_0,
-        result: Value::Bool(subscribed),
-        id: request.id,
-    })
+    Ok(Success::new(Value::Bool(subscribed), request.id))
 }
 
 #[allow(non_snake_case)]
@@ -435,11 +423,11 @@ fn _handle_no_param_method_call(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), session);
-    Ok(Success {
-        jsonrpc: Version::V2_0,
-        result: Value::from(id),
-        id: request.id,
-    })
+    let result = match id {
+        Id::Num(id) => Value::Number(id.into()),
+        Id::Str(id) => Value::String(id),
+    };
+    Ok(Success::new(result, request.id))
 }
 
 #[allow(non_snake_case)]
@@ -488,35 +476,20 @@ mod tests {
             chain_name: "test-net".to_string(),
             client_id: "0x2".to_string(),
         };
-        let request = MethodCall {
-            jsonrpc: Version::V2_0,
-            method: "state_unsubscribeStorage".to_string(),
-            params: Some(Params::Array(vec![Value::String(
+        let request = MethodCall::new(
+            "state_unsubscribeStorage",
+            Some(Params::Array(vec![Value::String(
                 success.result.as_str().unwrap().to_string(),
             )])),
-            id: Id::Num(2),
-        };
+            Id::Num(2),
+        );
 
         let success =
             handle_state_unsubscribeStorage(&mut sessions, session.clone(), request.clone());
-        assert_eq!(
-            success,
-            Ok(Success {
-                jsonrpc: Version::V2_0,
-                result: Value::Bool(true),
-                id: Id::Num(2),
-            })
-        );
+        assert_eq!(success, Ok(Success::new(Value::Bool(true), Id::Num(2))));
 
         // unsubscribe again
         let success = handle_state_unsubscribeStorage(&mut sessions, session, request);
-        assert_eq!(
-            success,
-            Ok(Success {
-                jsonrpc: Version::V2_0,
-                result: Value::Bool(false),
-                id: Id::Num(2),
-            })
-        );
+        assert_eq!(success, Ok(Success::new(Value::Bool(false), Id::Num(2))));
     }
 }

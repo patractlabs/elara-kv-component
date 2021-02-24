@@ -5,7 +5,7 @@ use std::{
 
 pub use jsonrpc_pubsub::manager::{IdProvider, NumericIdProvider, RandomStringIdProvider};
 
-use crate::message::{RequestMessage, SubscriptionId};
+use crate::message::{ElaraRequest, Id};
 
 pub trait ISession: Default + Clone + Send + Sync + Debug {
     fn chain_name(&self) -> String;
@@ -31,8 +31,8 @@ impl ISession for Session {
     }
 }
 
-impl From<&RequestMessage> for Session {
-    fn from(msg: &RequestMessage) -> Self {
+impl From<&ElaraRequest> for Session {
+    fn from(msg: &ElaraRequest) -> Self {
         Self {
             chain_name: msg.chain.clone(),
             client_id: msg.id.clone(),
@@ -47,17 +47,17 @@ pub type NoParamSessions = Sessions<NoParamSession>;
 
 pub trait ISessions<S> {
     /// Returns the next ID for the subscription.
-    fn new_subscription_id(&self) -> SubscriptionId;
+    fn new_subscription_id(&self) -> Id;
 
-    /// Returns a SubscriptionId for this storage.
-    fn insert(&mut self, id: SubscriptionId, s: S) -> Option<S>;
+    /// Returns a Id for this storage.
+    fn insert(&mut self, id: Id, s: S) -> Option<S>;
 
     /// Removes a session from the sessions, returning the value at the session if the session
     /// was previously in the map.
-    fn remove(&mut self, id: &SubscriptionId) -> Option<S>;
+    fn remove(&mut self, id: &Id) -> Option<S>;
 
     /// An iterator visiting all key-value pairs in arbitrary order.
-    fn iter(&self) -> Iter<'_, SubscriptionId, S>;
+    fn iter(&self) -> Iter<'_, Id, S>;
 
     fn len(&self) -> usize;
 
@@ -70,29 +70,29 @@ pub trait ISessions<S> {
 #[derive(Default, Debug, Clone)]
 pub struct Sessions<SessionItem, I: IdProvider = RandomStringIdProvider> {
     id_provider: I,
-    map: HashMap<SubscriptionId, SessionItem>,
+    map: HashMap<Id, SessionItem>,
 }
 
 impl<S> ISessions<S> for Sessions<S> {
     /// Returns the next ID for the subscription.
-    fn new_subscription_id(&self) -> SubscriptionId {
+    fn new_subscription_id(&self) -> Id {
         let id = self.id_provider.next_id();
         id.into()
     }
 
     /// Returns a SubscriptionId for this storage.
-    fn insert(&mut self, id: SubscriptionId, s: S) -> Option<S> {
+    fn insert(&mut self, id: Id, s: S) -> Option<S> {
         self.map.insert(id, s)
     }
 
     /// Removes a session from the sessions, returning the value at the session if the session
     /// was previously in the map.
-    fn remove(&mut self, id: &SubscriptionId) -> Option<S> {
+    fn remove(&mut self, id: &Id) -> Option<S> {
         self.map.remove(id)
     }
 
     /// An iterator visiting all key-value pairs in arbitrary order.
-    fn iter(&self) -> Iter<'_, SubscriptionId, S> {
+    fn iter(&self) -> Iter<'_, Id, S> {
         self.map.iter()
     }
 

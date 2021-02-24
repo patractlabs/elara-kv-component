@@ -8,7 +8,6 @@ use std::{
     },
 };
 
-use async_jsonrpc_client::Error;
 use futures::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream, StreamExt},
@@ -28,7 +27,7 @@ use tokio_tungstenite::{
 
 use crate::{
     config::{Config, NodeConfig},
-    message::{ErrorMessage, Failure, MethodCall, RequestMessage, ResponseMessage, Version},
+    message::{ElaraRequest, ElaraResponse, Error, Failure, MethodCall, Version},
     session::Session,
     substrate,
 };
@@ -79,7 +78,7 @@ pub trait MessageHandler: Send + Sync {
 
     /// When the result is Ok, it means to send it to corresponding subscription channel to handle it.
     /// When the result is Err, it means to response the err to peer.
-    fn handle(&self, session: Session, request: MethodCall) -> Result<(), ResponseMessage>;
+    fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse>;
 }
 
 pub type WsSender = SplitSink<WebSocketStream<TcpStream>, Message>;
@@ -134,11 +133,11 @@ impl Default for WsConnections {
     }
 }
 
-fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &str) -> Result<(), ErrorMessage> {
+fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &str) -> Result<(), Error> {
     if nodes.contains_key(chain) {
         Ok(())
     } else {
-        Err(ErrorMessage::chain_not_found())
+        Err(Error::parse_error())
     }
 }
 
@@ -221,14 +220,13 @@ impl WsConnection {
     // when result is ok, it means to send it to corresponding subscription channel to handle it.
     // When result is err, it means to response the err to peer.
     // The error is elara error code, not jsonrpc error.
-    async fn _handle_message(&self, msg: impl Into<String>) -> Result<(), ResponseMessage> {
+    async fn _handle_message(&self, msg: impl Into<String>) -> Result<(), ElaraResponse> {
         let msg = msg.into();
-        let msg: RequestMessage = serde_json::from_str(msg.as_str()).map_err(|_| {
-            ResponseMessage::error_response(None, None, ErrorMessage::parse_error())
-        })?;
+        let msg = serde_json::from_str::<ElaraRequest>(msg.as_str())
+            .map_err(|_| ElaraResponse::failure(None, None, Error::parse_error()))?;
 
         validate_chain(&self.cfg.nodes, &msg.chain).map_err(|err| {
-            ResponseMessage::error_response(Some(msg.id.clone()), Some(msg.chain.clone()), err)
+            ElaraResponse::failure(Some(msg.id.clone()), Some(msg.chain.clone()), err)
         })?;
 
         let session: Session = Session::from(&msg);
@@ -239,22 +237,15 @@ impl WsConnection {
                 id: None,
             })
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
-            .map_err(|res| ResponseMessage {
-                id: Some(msg.id.clone()),
-                chain: Some(msg.chain.clone()),
-                error: None,
-                result: Some(res),
-            })?;
+            .map_err(|res| ElaraResponse::success(msg.id.clone(), msg.chain.clone(), res))?;
 
         let chain_handlers = self.chain_handlers.read().await;
 
         let handler = chain_handlers.get(msg.chain.as_str());
 
-        let handler = handler
-            .ok_or_else(ErrorMessage::chain_not_found)
-            .map_err(|err| {
-                ResponseMessage::error_response(Some(msg.id.clone()), Some(msg.chain.clone()), err)
-            })?;
+        let handler = handler.ok_or_else(Error::parse_error).map_err(|err| {
+            ElaraResponse::failure(Some(msg.id.clone()), Some(msg.chain.clone()), err)
+        })?;
         handler.handle(session, request)
     }
 
