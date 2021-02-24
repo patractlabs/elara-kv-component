@@ -36,216 +36,10 @@ pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
 pub type MethodSenders = HashMap<&'static str, MethodSender>;
 pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
 
-pub struct RequestHandler {
-    senders: MethodSenders,
-}
-
-impl RequestHandler {
-    /// make this ws connection subscribing a polkadot node jsonrpc subscription
-    pub fn new(conn: WsConnection) -> Self {
-        let (senders, receivers) = method_channel();
-        handle_subscription_response(conn.clone(), conn.sessions.polkadot_sessions, receivers);
-        Self { senders }
-    }
-}
-
-impl MessageHandler for RequestHandler {
-    fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse> {
-        let sender = self
-            .senders
-            .get(request.method.as_str())
-            .ok_or_else(|| Failure::new(Error::method_not_found(), Some(request.id.clone())))
-            .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
-            .map_err(|res| {
-                ElaraResponse::success(session.client_id.clone(), session.chain_name.clone(), res)
-            })?;
-
-        let method = request.method.clone();
-        let res = sender.send((session, request));
-        if res.is_err() {
-            log::warn!("sender channel `{}` is closed", method);
-        }
-        Ok(())
-    }
-}
-
-type HandlerFn<S> = fn(&mut S, Session, MethodCall) -> Result<Success, Error>;
-
-pub fn method_channel() -> (MethodSenders, MethodReceivers) {
-    let mut receivers = HashMap::new();
-    let mut senders = HashMap::new();
-
-    let methods = vec![
-        constants::grandpa_subscribeJustifications,
-        constants::grandpa_unsubscribeJustifications,
-        constants::state_subscribeStorage,
-        constants::state_unsubscribeStorage,
-        constants::state_subscribeRuntimeVersion,
-        constants::state_unsubscribeRuntimeVersion,
-        constants::chain_subscribeAllHeads,
-        constants::chain_unsubscribeAllHeads,
-        constants::chain_subscribeNewHeads,
-        constants::chain_unsubscribeNewHeads,
-        constants::chain_subscribeFinalizedHeads,
-        constants::chain_unsubscribeFinalizedHeads,
-        // TODO: now don't support these api
-        // constants::author_submitAndWatchExtrinsic,
-        // constants::author_unwatchExtrinsic,
-    ];
-
-    for method in methods {
-        let (sender, receiver) = unbounded_channel::<(Session, MethodCall)>();
-        senders.insert(method, sender);
-        receivers.insert(method, receiver);
-    }
-    (senders, receivers)
-}
-
-/// Start to spawn handler task about subscription jsonrpc in background to response for every subscription.
-/// It maintains the sessions for this connection.
-pub fn handle_subscription_response(
-    conn: WsConnection,
-    sessions: SubscriptionSessions,
-    receivers: MethodReceivers,
-) {
-    for (method, receiver) in receivers.into_iter() {
-        match method {
-            constants::state_subscribeStorage => {
-                tokio::spawn(start_handle(
-                    sessions.storage_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_state_subscribeStorage,
-                ));
-            }
-            constants::state_unsubscribeStorage => {
-                tokio::spawn(start_handle(
-                    sessions.storage_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_state_unsubscribeStorage,
-                ));
-            }
-
-            constants::state_subscribeRuntimeVersion => {
-                tokio::spawn(start_handle(
-                    sessions.runtime_version_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_state_subscribeRuntimeVersion,
-                ));
-            }
-            constants::state_unsubscribeRuntimeVersion => {
-                tokio::spawn(start_handle(
-                    sessions.runtime_version_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_state_unsubscribeRuntimeVersion,
-                ));
-            }
-
-            constants::grandpa_subscribeJustifications => {
-                tokio::spawn(start_handle(
-                    sessions.grandpa_justifications.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_grandpa_subscribeJustifications,
-                ));
-            }
-            constants::grandpa_unsubscribeJustifications => {
-                tokio::spawn(start_handle(
-                    sessions.grandpa_justifications.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_grandpa_unsubscribeJustifications,
-                ));
-            }
-
-            constants::chain_subscribeNewHeads => {
-                tokio::spawn(start_handle(
-                    sessions.new_head_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_chain_subscribeNewHeads,
-                ));
-            }
-            constants::chain_unsubscribeNewHeads => {
-                tokio::spawn(start_handle(
-                    sessions.new_head_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_chain_unsubscribeNewHeads,
-                ));
-            }
-
-            constants::chain_subscribeAllHeads => {
-                tokio::spawn(start_handle(
-                    sessions.all_head_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_chain_subscribeAllHeads,
-                ));
-            }
-            constants::chain_unsubscribeAllHeads => {
-                tokio::spawn(start_handle(
-                    sessions.all_head_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_chain_unsubscribeAllHeads,
-                ));
-            }
-
-            constants::chain_subscribeFinalizedHeads => {
-                tokio::spawn(start_handle(
-                    sessions.finalized_head_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_chain_subscribeFinalizedHeads,
-                ));
-            }
-            constants::chain_unsubscribeFinalizedHeads => {
-                tokio::spawn(start_handle(
-                    sessions.finalized_head_sessions.clone(),
-                    conn.clone(),
-                    receiver,
-                    handle_chain_unsubscribeFinalizedHeads,
-                ));
-            }
-
-            _ => {}
-        };
-    }
-}
-
-// according to different message to handle different subscription
-async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
-    sessions: Arc<RwLock<S>>,
-    conn: WsConnection,
-    mut receiver: MethodReceiver,
-    handle: HandlerFn<S>,
-) {
-    while let Some((session, request)) = receiver.recv().await {
-        // We try to lock it instead of keeping it locked.
-        // Because the lock time may be longer.
-        let mut sessions = sessions.write().await;
-        let res = handle(sessions.borrow_mut(), session.clone(), request);
-
-        let res = res
-            .map(|success| serialize_success_response(&session, &success))
-            .map_err(|err| serialize_success_response(&session, &err));
-        let msg = match res {
-            Ok(s) => s,
-            Err(s) => s,
-        };
-
-        let _res = conn.send_message(Message::Text(msg)).await;
-    }
-}
-
 // TODO: now we don't support extrinsic
 #[allow(dead_code)]
 #[allow(non_snake_case)]
-fn handle_author_unwatchExtrinsic(
+pub fn handle_author_unwatchExtrinsic(
     sessions: &mut WatchExtrinsicSessions,
     session: Session,
     request: MethodCall,
@@ -254,7 +48,7 @@ fn handle_author_unwatchExtrinsic(
 }
 
 #[allow(non_snake_case)]
-fn handle_state_unsubscribeStorage(
+pub fn handle_state_unsubscribeStorage(
     sessions: &mut StorageSessions,
     session: Session,
     request: MethodCall,
@@ -263,7 +57,7 @@ fn handle_state_unsubscribeStorage(
 }
 
 #[allow(non_snake_case)]
-fn handle_state_unsubscribeRuntimeVersion(
+pub fn handle_state_unsubscribeRuntimeVersion(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
@@ -272,7 +66,7 @@ fn handle_state_unsubscribeRuntimeVersion(
 }
 
 #[allow(non_snake_case)]
-fn handle_grandpa_unsubscribeJustifications(
+pub fn handle_grandpa_unsubscribeJustifications(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
@@ -281,7 +75,7 @@ fn handle_grandpa_unsubscribeJustifications(
 }
 
 #[allow(non_snake_case)]
-fn handle_chain_unsubscribeAllHeads(
+pub fn handle_chain_unsubscribeAllHeads(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
@@ -290,7 +84,7 @@ fn handle_chain_unsubscribeAllHeads(
 }
 
 #[allow(non_snake_case)]
-fn handle_chain_unsubscribeNewHeads(
+pub fn handle_chain_unsubscribeNewHeads(
     sessions: &mut NewHeadSessions,
     session: Session,
     request: MethodCall,
@@ -299,7 +93,7 @@ fn handle_chain_unsubscribeNewHeads(
 }
 
 #[allow(non_snake_case)]
-fn handle_chain_unsubscribeFinalizedHeads(
+pub fn handle_chain_unsubscribeFinalizedHeads(
     sessions: &mut FinalizedHeadSessions,
     session: Session,
     request: MethodCall,
@@ -308,7 +102,7 @@ fn handle_chain_unsubscribeFinalizedHeads(
 }
 
 #[allow(non_snake_case)]
-fn handle_state_subscribeStorage(
+pub fn handle_state_subscribeStorage(
     sessions: &mut StorageSessions,
     session: Session,
     request: MethodCall,
@@ -340,7 +134,7 @@ fn handle_state_subscribeStorage(
 }
 
 #[allow(non_snake_case)]
-fn handle_state_subscribeRuntimeVersion(
+pub fn handle_state_subscribeRuntimeVersion(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
@@ -349,7 +143,7 @@ fn handle_state_subscribeRuntimeVersion(
 }
 
 #[allow(non_snake_case)]
-fn handle_grandpa_subscribeJustifications(
+pub fn handle_grandpa_subscribeJustifications(
     sessions: &mut RuntimeVersionSessions,
     session: Session,
     request: MethodCall,
@@ -370,7 +164,7 @@ pub fn expect_no_params(params: &Option<Params>) -> Result<(), Error> {
 }
 
 #[allow(non_snake_case)]
-fn handle_chain_subscribeAllHeads(
+pub fn handle_chain_subscribeAllHeads(
     sessions: &mut AllHeadSessions,
     session: Session,
     request: MethodCall,
@@ -379,7 +173,7 @@ fn handle_chain_subscribeAllHeads(
 }
 
 #[allow(non_snake_case)]
-fn handle_chain_subscribeNewHeads(
+pub fn handle_chain_subscribeNewHeads(
     sessions: &mut NewHeadSessions,
     session: Session,
     request: MethodCall,
@@ -388,7 +182,7 @@ fn handle_chain_subscribeNewHeads(
 }
 
 #[allow(non_snake_case)]
-fn handle_chain_subscribeFinalizedHeads(
+pub fn handle_chain_subscribeFinalizedHeads(
     sessions: &mut FinalizedHeadSessions,
     session: Session,
     request: MethodCall,
@@ -398,7 +192,7 @@ fn handle_chain_subscribeFinalizedHeads(
 
 #[allow(non_snake_case)]
 #[inline]
-fn handle_unsubscribe<T>(
+pub fn handle_unsubscribe<T>(
     sessions: &mut Sessions<T>,
     _session: Session,
     request: MethodCall,

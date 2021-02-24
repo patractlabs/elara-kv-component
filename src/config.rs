@@ -33,7 +33,7 @@ impl Config {
             .iter()
             .filter(|(k, _v)| {
                 let k = k.as_str();
-                !matches!(k, crate::substrate::NODE_NAME)
+                !matches!(k, crate::substrate::polkadot::NODE_NAME)
             })
             .collect::<HashMap<_, _>>();
 

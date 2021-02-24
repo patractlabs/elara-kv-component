@@ -97,7 +97,9 @@ async fn create_clients(cfg: &Config, connections: WsConnections) -> rpc_client:
             .unwrap_or_else(|_| panic!("Cannot connect to {}: {}", node, cfg.addr));
 
         match node.as_str() {
-            substrate::NODE_NAME => subscribe_polkadot(connections.clone(), &client).await,
+            substrate::polkadot::NODE_NAME => {
+                subscribe_polkadot(connections.clone(), &client).await
+            }
             // kusama::NODE_NAME => subscribe_kusama(connections.clone(), &client).await,
 
             // TODO:
@@ -128,7 +130,7 @@ async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>)
 
                 Ok(()) => {
                     let res = match client.node_name().as_str() {
-                        substrate::NODE_NAME => {
+                        substrate::polkadot::NODE_NAME => {
                             substrate::rpc_client::start_subscribe(&*client).await
                         }
                         // kusama::NODE_NAME => kusama::rpc_client::start_subscribe(&*client).await,
@@ -178,8 +180,8 @@ async fn subscribe_kusama(connections: WsConnections, client: &RpcClient) {
 
 async fn register_handlers(mut conn: WsConnection) {
     conn.register_message_handler(
-        substrate::NODE_NAME,
-        substrate::client::RequestHandler::new(conn.clone()),
+        substrate::polkadot::NODE_NAME,
+        substrate::polkadot::RequestHandler::new(conn.clone()),
     )
     .await;
     /*
