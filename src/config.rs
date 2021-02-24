@@ -1,10 +1,11 @@
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{self, Read},
+};
+
 use serde::Deserialize;
 use toml::ser::Error;
-
-use std::collections::HashMap;
-use std::fs::File;
-use std::io;
-use std::io::prelude::*;
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -32,7 +33,7 @@ impl Config {
             .iter()
             .filter(|(k, _v)| {
                 let k = k.as_str();
-                !matches!(k, crate::polkadot::NODE_NAME | crate::kusama::NODE_NAME)
+                !matches!(k, crate::substrate::NODE_NAME)
             })
             .collect::<HashMap<_, _>>();
 

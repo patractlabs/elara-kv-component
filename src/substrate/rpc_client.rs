@@ -1,15 +1,20 @@
-use crate::polkadot::consts;
-use crate::polkadot::service::{
-    send_chain_all_head, send_chain_finalized_head, send_chain_new_head,
-    send_grandpa_justifications, send_state_runtime_version, send_state_storage,
-};
-use crate::rpc_client::RpcClient;
-use crate::websocket::{WsConnection, WsConnections};
-use async_jsonrpc_client::{SubscriptionNotification, WsClientError, WsSubscription};
-use futures::{Stream, StreamExt};
-use log::*;
-use serde::Serialize;
 use std::fmt::Debug;
+
+use async_jsonrpc_client::{SubscriptionNotification, WsClientError, WsSubscription};
+use futures::stream::{Stream, StreamExt};
+use serde::Serialize;
+
+use crate::{
+    rpc_client::RpcClient,
+    substrate::{
+        constants,
+        service::{
+            send_chain_all_head, send_chain_finalized_head, send_chain_new_head,
+            send_grandpa_justifications, send_state_runtime_version, send_state_storage,
+        },
+    },
+    websocket::{WsConnection, WsConnections},
+};
 
 type NotificationStream = WsSubscription<SubscriptionNotification>;
 
@@ -25,22 +30,22 @@ pub struct SubscribedStream {
 
 pub async fn start_subscribe(client: &RpcClient) -> Result<SubscribedStream, WsClientError> {
     let storage = client
-        .subscribe(consts::state_subscribeStorage, None)
+        .subscribe(constants::state_subscribeStorage, None)
         .await?;
     let version = client
-        .subscribe(consts::state_subscribeRuntimeVersion, None)
+        .subscribe(constants::state_subscribeRuntimeVersion, None)
         .await?;
     let grandpa_justifications = client
-        .subscribe(consts::grandpa_subscribeJustifications, None)
+        .subscribe(constants::grandpa_subscribeJustifications, None)
         .await?;
     let all_head = client
-        .subscribe(consts::chain_subscribeAllHeads, None)
+        .subscribe(constants::chain_subscribeAllHeads, None)
         .await?;
     let new_head = client
-        .subscribe(consts::chain_subscribeNewHeads, None)
+        .subscribe(constants::chain_subscribeNewHeads, None)
         .await?;
     let finalized_head = client
-        .subscribe(consts::chain_subscribeFinalizedHeads, None)
+        .subscribe(constants::chain_subscribeFinalizedHeads, None)
         .await?;
 
     Ok(SubscribedStream {
@@ -101,7 +106,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
+                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -124,7 +129,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
+                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -147,7 +152,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
+                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -167,7 +172,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
+                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -187,7 +192,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
+                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },
@@ -210,7 +215,7 @@ impl SubscribedStream {
                         ),
 
                         Err(err) => {
-                            warn!("Receive an illegal subscribed data: {}: {}", err, &data)
+                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
                         }
                     };
                 },

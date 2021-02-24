@@ -1,8 +1,7 @@
-use crate::message::Params;
-pub use async_jsonrpc_client::WsClientError;
-use async_jsonrpc_client::{PubsubTransport, Transport};
-use async_jsonrpc_client::{SubscriptionNotification, WsClient, WsSubscription};
-use jsonrpc_types::Output;
+use async_jsonrpc_client::{
+    Output, Params, PubsubTransport, SubscriptionNotification, Transport, WsClient, WsClientError,
+    WsSubscription,
+};
 
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
 

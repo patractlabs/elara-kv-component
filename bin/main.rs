@@ -1,21 +1,19 @@
 mod cmd;
 
-use elara_kv_component::config::*;
-use elara_kv_component::rpc_client::RpcClient;
+use std::{collections::HashMap, sync::Arc};
+
 use futures::StreamExt;
-use log::*;
-use std::sync::Arc;
+use structopt::StructOpt;
+use tokio::{sync::Mutex, time::Duration};
 use tokio_tungstenite::tungstenite;
 use tungstenite::{Error, Message};
 
-use elara_kv_component::rpc_client;
-use elara_kv_component::websocket::{WsConnection, WsConnections, WsServer};
-use elara_kv_component::{kusama, polkadot};
-use std::collections::HashMap;
-use tokio::sync::Mutex;
-use tokio::time::Duration;
-
-use structopt::StructOpt;
+use elara_kv_component::{
+    config::*,
+    rpc_client::{self, RpcClient},
+    substrate,
+    websocket::{WsConnection, WsConnections, WsServer},
+};
 
 type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
 
@@ -28,18 +26,18 @@ async fn main() {
 
     let opt = cmd::Opt::from_args();
 
-    info!("Load config from: {}", &opt.config);
+    log::info!("Load config from: {}", &opt.config);
     let cfg = load_config(&opt.config).expect("Illegal config path");
     let cfg: Config = toml::from_str(&*cfg).expect("Config is illegal");
     let cfg = cfg.validate().expect("Config is illegal");
 
-    debug!("Load config: {:#?}", &cfg);
+    log::debug!("Load config: {:#?}", &cfg);
 
     let addr = cfg.ws.addr.as_str();
     let server = WsServer::bind(addr)
         .await
         .unwrap_or_else(|_| panic!("Cannot listen {}", addr));
-    info!("Started WebSocket server at {}", addr);
+    log::info!("Started WebSocket server at {}", addr);
 
     // started to subscribe chain node by ws client
     let mut connections = WsConnections::new();
@@ -57,13 +55,13 @@ async fn main() {
 
                 // We register the configured node handlers here
                 register_handlers(conn.clone()).await;
-                info!("New WebSocket connection: {}", conn.addr());
-                info!("Total connection num: {}", connections.len().await);
+                log::info!("New WebSocket connection: {}", conn.addr());
+                log::info!("Total connection num: {}", connections.len().await);
 
                 tokio::spawn(handle_connection(conn));
             }
             Err(err) => {
-                warn!("Error occurred when accept a new connection: {}", err);
+                log::warn!("Error occurred when accept a new connection: {}", err);
             }
         };
     }
@@ -74,16 +72,16 @@ async fn remove_expired_connections(mut conns: WsConnections) {
     loop {
         let mut expired = vec![];
         for (addr, conn) in conns.inner().read().await.iter() {
-            debug!("{}", conn);
+            log::debug!("{}", conn);
             if conn.closed() {
                 expired.push(*addr);
             }
         }
 
         for addr in expired {
-            info!("Removed a expired connection: {}", addr);
+            log::info!("Removed a expired connection: {}", addr);
             conns.remove(&addr).await;
-            info!("Total connection num: {}", conns.len().await);
+            log::info!("Total connection num: {}", conns.len().await);
         }
 
         tokio::time::sleep(Duration::from_secs(CONN_EXPIRED_TIME_SECS)).await;
@@ -99,8 +97,8 @@ async fn create_clients(cfg: &Config, connections: WsConnections) -> rpc_client:
             .unwrap_or_else(|_| panic!("Cannot connect to {}: {}", node, cfg.addr));
 
         match node.as_str() {
-            polkadot::NODE_NAME => subscribe_polkadot(connections.clone(), &client).await,
-            kusama::NODE_NAME => subscribe_kusama(connections.clone(), &client).await,
+            substrate::NODE_NAME => subscribe_polkadot(connections.clone(), &client).await,
+            // kusama::NODE_NAME => subscribe_kusama(connections.clone(), &client).await,
 
             // TODO:
             _ => unimplemented!(),
@@ -122,7 +120,7 @@ async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>)
 
         let mut client = client.lock().await;
         if !client.is_alive().await {
-            info!("Trying to reconnect to `{}`...", client.node_name());
+            log::info!("Trying to reconnect to `{}`...", client.node_name());
             let res = client.reconnect().await;
 
             let res = match res {
@@ -130,10 +128,10 @@ async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>)
 
                 Ok(()) => {
                     let res = match client.node_name().as_str() {
-                        polkadot::NODE_NAME => {
-                            polkadot::rpc_client::start_subscribe(&*client).await
+                        substrate::NODE_NAME => {
+                            substrate::rpc_client::start_subscribe(&*client).await
                         }
-                        kusama::NODE_NAME => kusama::rpc_client::start_subscribe(&*client).await,
+                        // kusama::NODE_NAME => kusama::rpc_client::start_subscribe(&*client).await,
                         _ => {
                             unreachable!()
                         }
@@ -149,7 +147,7 @@ async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>)
             };
 
             if let Err(err) = res {
-                warn!(
+                log::warn!(
                     "Error occurred when reconnect to `{}: {}`: {:?}",
                     client.node_name(),
                     client.addr(),
@@ -161,33 +159,36 @@ async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>)
 }
 
 async fn subscribe_polkadot(connections: WsConnections, client: &RpcClient) {
-    info!("Start to subscribe polkadot from `{}`", client.addr());
-    let stream = polkadot::rpc_client::start_subscribe(client)
+    log::info!("Start to subscribe polkadot from `{}`", client.addr());
+    let stream = substrate::rpc_client::start_subscribe(client)
         .await
         .expect("Cannot subscribe polkadot node");
     stream.start(connections.clone());
 }
 
+/*
 async fn subscribe_kusama(connections: WsConnections, client: &RpcClient) {
-    info!("Start to subscribe kusama from `{}`", client.addr());
+    log::info!("Start to subscribe kusama from `{}`", client.addr());
     let stream = kusama::rpc_client::start_subscribe(client)
         .await
         .expect("Cannot subscribe polkadot node");
     stream.start(connections.clone());
 }
+*/
 
 async fn register_handlers(mut conn: WsConnection) {
     conn.register_message_handler(
-        polkadot::NODE_NAME,
-        polkadot::client::RequestHandler::new(conn.clone()),
+        substrate::NODE_NAME,
+        substrate::client::RequestHandler::new(conn.clone()),
     )
     .await;
-
+    /*
     conn.register_message_handler(
         kusama::NODE_NAME,
         kusama::client::RequestHandler::new(conn.clone()),
     )
     .await;
+    */
 }
 
 async fn handle_connection(connection: WsConnection) {
@@ -195,7 +196,7 @@ async fn handle_connection(connection: WsConnection) {
     let mut receiver = receiver.lock().await;
 
     while let Some(msg) = receiver.next().await {
-        debug!("recv a message: {:?}", msg);
+        log::debug!("recv a message: {:?}", msg);
         match msg {
             Ok(msg) => {
                 if msg.is_empty() {
@@ -223,7 +224,7 @@ async fn handle_connection(connection: WsConnection) {
                         match res {
                             Ok(()) => {}
                             Err(err) => {
-                                warn!(
+                                log::warn!(
                                     "Error occurred when send response to peer `{}`: {}",
                                     connection.addr(),
                                     err
@@ -238,12 +239,12 @@ async fn handle_connection(connection: WsConnection) {
             Err(Error::ConnectionClosed) => break,
 
             Err(err) => {
-                warn!("Err occurred when receive a message: {}", err);
+                log::warn!("Err occurred when receive a message: {}", err);
                 break;
             }
         }
     }
 
     connection.close();
-    info!("Closed connection to peer {}", connection.addr());
+    log::info!("Closed connection to peer {}", connection.addr());
 }

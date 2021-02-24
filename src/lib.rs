@@ -1,7 +1,6 @@
 pub mod config;
-pub mod kusama;
 pub mod message;
-pub mod polkadot;
 pub mod rpc_client;
 pub mod session;
+pub mod substrate;
 pub mod websocket;
