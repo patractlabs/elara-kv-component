@@ -73,7 +73,7 @@ async fn remove_expired_connections(mut conns: WsConnections) {
         let mut expired = vec![];
         for (addr, conn) in conns.inner().read().await.iter() {
             log::debug!("{}", conn);
-            if conn.closed() {
+            if conn.is_closed() {
                 expired.push(*addr);
             }
         }

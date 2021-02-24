@@ -15,7 +15,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     message::{
-        serialize_success_response, ElaraResponse, Error, Failure, Id, MethodCall, Params, Success,
+        serialize_success_response, ElaraResponse, Error, Failure, MethodCall, Params, Success,
         Value,
     },
     session::{ISessions, NoParamSessions, Session, Sessions},
@@ -336,11 +336,7 @@ fn handle_state_subscribeStorage(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), (session, storage_keys));
-    let result = match id {
-        Id::Num(id) => Value::Number(id.into()),
-        Id::Str(id) => Value::String(id),
-    };
-    Ok(Success::new(result, request.id))
+    Ok(Success::new(id.into(), request.id))
 }
 
 #[allow(non_snake_case)]
@@ -423,11 +419,7 @@ fn _handle_no_param_method_call(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), session);
-    let result = match id {
-        Id::Num(id) => Value::Number(id.into()),
-        Id::Str(id) => Value::String(id),
-    };
-    Ok(Success::new(result, request.id))
+    Ok(Success::new(id.into(), request.id))
 }
 
 #[allow(non_snake_case)]

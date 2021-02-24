@@ -7,7 +7,7 @@ description = "Elara KV component for subscribing substrate node data"
 readme = "README.md"
 
 [dependencies]
-async-jsonrpc-client = "0.3.0-beta.1"
+async-jsonrpc-client = "0.3"
 env_logger = "0.8"
 futures = "0.3"
 jsonrpc-pubsub = "17.0"
