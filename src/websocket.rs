@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fmt,
+    fmt, io,
     net::SocketAddr,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -38,39 +38,31 @@ pub struct WsServer {
     listener: TcpListener,
 }
 
-/// WsConnection maintains state. When WsServer accept a new connection, a WsConnection will be returned.
-#[derive(Clone)]
-pub struct WsConnection {
-    closed: Arc<AtomicBool>,
-    cfg: Config,
-    addr: SocketAddr,
-    sender: Arc<Mutex<WsSender>>,
-    receiver: Arc<Mutex<WsReceiver>>,
-    chain_handlers: Arc<RwLock<HashMap<&'static str, Box<dyn MessageHandler>>>>,
+impl WsServer {
+    pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
+        let listener = TcpListener::bind(&addr).await?;
+        Ok(Self { listener })
+    }
 
-    pub sessions: ConnectionSessions,
-}
-
-impl fmt::Display for WsConnection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "wsConnection(addr:{}, closed:{})",
-            self.addr,
-            self.closed.load(Ordering::SeqCst)
-        )
+    /// returns a WebSocketStream and corresponding connection as a state
+    pub async fn accept(&self, cfg: Config) -> tungstenite::Result<WsConnection> {
+        let (stream, addr) = self.listener.accept().await?;
+        let stream = accept_async(stream).await?;
+        let (sender, receiver) = stream.split();
+        Ok(WsConnection {
+            closed: Default::default(),
+            cfg,
+            addr,
+            sender: Arc::new(Mutex::new(sender)),
+            receiver: Arc::new(Mutex::new(receiver)),
+            chain_handlers: Default::default(),
+            sessions: Default::default(),
+        })
     }
 }
 
-#[derive(Clone)]
-pub struct WsConnections {
-    inner: Arc<RwLock<HashMap<SocketAddr, WsConnection>>>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ConnectionSessions {
-    pub polkadot_sessions: substrate::session::SubscriptionSessions,
-}
+pub type WsSender = SplitSink<WebSocketStream<TcpStream>, Message>;
+pub type WsReceiver = SplitStream<WebSocketStream<TcpStream>>;
 
 /// Handle specified chain's subscription request
 pub trait MessageHandler: Send + Sync {
@@ -81,90 +73,32 @@ pub trait MessageHandler: Send + Sync {
     fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse>;
 }
 
-pub type WsSender = SplitSink<WebSocketStream<TcpStream>, Message>;
-pub type WsReceiver = SplitStream<WebSocketStream<TcpStream>>;
+/// WsConnection maintains state. When WsServer accept a new connection, a WsConnection will be returned.
+#[derive(Clone)]
+pub struct WsConnection {
+    closed: Arc<AtomicBool>,
+    cfg: Config,
+    addr: SocketAddr,
+    sender: Arc<Mutex<WsSender>>,
+    receiver: Arc<Mutex<WsReceiver>>,
+    chain_handlers: Arc<RwLock<HashMap<&'static str, Box<dyn MessageHandler>>>>,
+    pub sessions: ConnectionSessions,
+}
 
-impl WsConnections {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    /// add an alive connection to pool
-    pub async fn add(&mut self, conn: WsConnection) {
-        if conn.closed() {
-            return;
-        }
-        let mut map = self.inner.write().await;
-        let expired = map.insert(conn.addr(), conn);
-        Self::close_conn(expired);
-    }
-
-    fn close_conn(conn: Option<WsConnection>) {
-        if let Some(conn) = conn {
-            conn.close();
-        }
-    }
-    /// remove an alive connection from pool and close it
-    pub async fn remove(&mut self, addr: &SocketAddr) {
-        let mut map = self.inner.write().await;
-        let expired = map.remove(addr);
-        Self::close_conn(expired);
-    }
-
-    #[inline]
-    pub fn inner(&self) -> Arc<RwLock<HashMap<SocketAddr, WsConnection>>> {
-        self.inner.clone()
-    }
-
-    pub async fn len(&self) -> usize {
-        self.inner.read().await.len()
-    }
-
-    pub async fn is_empty(&self) -> bool {
-        self.inner.read().await.is_empty()
+impl fmt::Display for WsConnection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "WsConnection(addr:{}, closed:{})",
+            self.addr,
+            self.closed.load(Ordering::SeqCst)
+        )
     }
 }
 
-impl Default for WsConnections {
-    fn default() -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(Default::default())),
-        }
-    }
-}
-
-fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &str) -> Result<(), Error> {
-    if nodes.contains_key(chain) {
-        Ok(())
-    } else {
-        Err(Error::parse_error())
-    }
-}
-
-impl WsServer {
-    pub async fn bind<A: ToSocketAddrs>(addr: A) -> std::io::Result<Self> {
-        let listener = TcpListener::bind(&addr).await?;
-
-        Ok(Self { listener })
-    }
-
-    /// returns a WebSocketStream and corresponding connection as a state
-    pub async fn accept(&self, cfg: Config) -> tungstenite::Result<WsConnection> {
-        let (stream, addr) = self.listener.accept().await?;
-        let stream = accept_async(stream).await?;
-        let (sender, receiver) = stream.split();
-
-        let conn = WsConnection {
-            closed: Default::default(),
-            cfg,
-            addr,
-            sender: Arc::new(Mutex::new(sender)),
-            receiver: Arc::new(Mutex::new(receiver)),
-            chain_handlers: Default::default(),
-            sessions: Default::default(),
-        };
-        Ok(conn)
-    }
+#[derive(Debug, Clone, Default)]
+pub struct ConnectionSessions {
+    pub polkadot_sessions: substrate::session::SubscriptionSessions,
 }
 
 impl WsConnection {
@@ -180,19 +114,19 @@ impl WsConnection {
     }
 
     #[inline]
-    pub fn closed(&self) -> bool {
+    pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
     }
 
     pub fn close(&self) {
-        if self.closed() {
+        if self.is_closed() {
             return;
         }
         self.closed.store(true, Ordering::SeqCst);
     }
 
     pub async fn send_close(&self) -> tungstenite::Result<()> {
-        if self.closed() {
+        if self.is_closed() {
             return Ok(());
         }
         self.sender
@@ -215,6 +149,35 @@ impl WsConnection {
             sender.feed(msg).await?;
         }
         sender.flush().await
+    }
+
+    pub async fn register_message_handler(
+        &mut self,
+        chain_name: &'static str,
+        handler: impl MessageHandler + 'static,
+    ) -> &mut Self {
+        self.chain_handlers
+            .write()
+            .await
+            .insert(chain_name, Box::new(handler));
+        self
+    }
+
+    /// Send successful response in other channel handler.
+    /// The error result represents error occurred when send response
+    pub async fn handle_message(&self, msg: impl Into<String>) -> tungstenite::Result<()> {
+        let res = self._handle_message(msg).await;
+        match res {
+            // send no rpc error response in here
+            Err(resp) => {
+                self.send_message(Message::Text(
+                    serde_json::to_string(&resp).expect("serialize a response message"),
+                ))
+                .await
+            }
+            // do other rpc logic in other way
+            Ok(()) => Ok(()),
+        }
     }
 
     // when result is ok, it means to send it to corresponding subscription channel to handle it.
@@ -248,32 +211,63 @@ impl WsConnection {
         })?;
         handler.handle(session, request)
     }
+}
 
-    pub async fn register_message_handler(
-        &mut self,
-        chain_name: &'static str,
-        handler: impl MessageHandler + 'static,
-    ) {
-        self.chain_handlers
-            .write()
-            .await
-            .insert(chain_name, Box::new(handler));
+fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &str) -> Result<(), Error> {
+    if nodes.contains_key(chain) {
+        Ok(())
+    } else {
+        Err(Error::parse_error())
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct WsConnections {
+    // client addr ==> ws connection
+    inner: Arc<RwLock<HashMap<SocketAddr, WsConnection>>>,
+}
+
+impl WsConnections {
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Send successful response in other channel handler.
-    /// The error result represents error occurred when send response
-    pub async fn handle_message(&self, msg: impl Into<String>) -> tungstenite::Result<()> {
-        let res = self._handle_message(msg).await;
-        match res {
-            // send no rpc error response in here
-            Err(resp) => {
-                self.send_message(Message::Text(
-                    serde_json::to_string(&resp).expect("serialize a response message"),
-                ))
-                .await
-            }
-            // do other rpc logic in other way
-            Ok(()) => Ok(()),
+    /// add an alive connection to pool
+    pub async fn add(&mut self, conn: WsConnection) -> &mut Self {
+        if !conn.is_closed() {
+            let mut map = self.inner.write().await;
+            let expired = map.insert(conn.addr(), conn);
+            Self::close(expired);
         }
+        self
+    }
+
+    /// remove an alive connection from pool and close it
+    pub async fn remove(&mut self, addr: &SocketAddr) -> &mut Self {
+        {
+            let mut map = self.inner.write().await;
+            let expired = map.remove(addr);
+            Self::close(expired);
+        }
+        self
+    }
+
+    fn close(conn: Option<WsConnection>) {
+        if let Some(conn) = conn {
+            conn.close();
+        }
+    }
+
+    #[inline]
+    pub fn inner(&self) -> Arc<RwLock<HashMap<SocketAddr, WsConnection>>> {
+        self.inner.clone()
+    }
+
+    pub async fn len(&self) -> usize {
+        self.inner.read().await.len()
+    }
+
+    pub async fn is_empty(&self) -> bool {
+        self.inner.read().await.is_empty()
     }
 }

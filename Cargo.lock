@@ -20,9 +20,9 @@ dependencies = [
 
 [[package]]
 name = "async-jsonrpc-client"
-version = "0.3.0-beta.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5997ea12046da9d662d07cbc64a5b65534ed92184224b815b1ce98d3ad787b9d"
+checksum = "aed81bb36bcbe041406cceba4ba425726a783d26c0ae19547d51fe673d275975"
 dependencies = [
  "async-trait",
  "async-tungstenite",
@@ -587,9 +587,9 @@ dependencies = [
 
 [[package]]
 name = "jsonrpc-types"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9899c42074cdb6ef41435f6a278a39c69042646ad6f712b638edb825b4dd384"
+checksum = "8d203b1b00d03d1cee9ddcaf970d2ccdd40d8036d8fafef34a0b1b841486b232"
 dependencies = [
  "serde",
  "serde_json",
