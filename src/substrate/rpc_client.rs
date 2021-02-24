@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use async_jsonrpc_client::{WsClientError};
+use async_jsonrpc_client::WsClientError;
 use futures::stream::{Stream, StreamExt};
 use serde::Serialize;
 
@@ -83,7 +83,11 @@ pub async fn send_messages_to_conns<T, S>(
 }
 
 impl SubscribedStream {
-    pub fn register_subscription(&mut self, method: &'static str, stream: NotificationStream) -> Option<NotificationStream> {
+    pub fn register_subscription(
+        &mut self,
+        method: &'static str,
+        stream: NotificationStream,
+    ) -> Option<NotificationStream> {
         self.inner.insert(method, stream)
     }
 
@@ -97,9 +101,8 @@ impl SubscribedStream {
             all_head,
             new_head,
             finalized_head,
-            inner: _inner
+            inner: _inner,
         } = self;
-
 
         // we spawn task for every one subscription
 

@@ -234,7 +234,6 @@ pub async fn send_subscription_data<ST, Session, Input>(
     }
 }
 
-
 pub fn send_state_storage(
     sessions: Arc<RwLock<StorageSessions>>,
     conn: WsConnection,

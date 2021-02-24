@@ -1,24 +1,15 @@
 //! Client related session handlers
 //! Set sessions according to user's subscription request
 
-use std::{
-    collections::{HashMap, HashSet},
-};
-use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
-};
+use std::collections::{HashMap, HashSet};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    message::{
-        Error, MethodCall, Params, Success,
-        Value,
-    },
+    message::{Error, MethodCall, Params, Success, Value},
     session::{ISessions, NoParamSessions, Session, Sessions},
-    substrate::{
-        session::{
-            AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
-            StorageKeys, StorageSessions, WatchExtrinsicSessions,
-        },
+    substrate::session::{
+        AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
+        StorageKeys, StorageSessions, WatchExtrinsicSessions,
     },
 };
 
