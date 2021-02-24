@@ -36,8 +36,8 @@ pub type RuntimeVersionSessions = NoParamSessions;
 pub type StorageSession = (Session, StorageKeys<HashSet<String>>);
 
 impl ISession for StorageSession {
-    fn chain_name(&self) -> Chain {
-        self.0.chain_name()
+    fn chain(&self) -> Chain {
+        self.0.chain()
     }
 
     fn client_id(&self) -> String {

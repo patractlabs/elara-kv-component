@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub trait ISession: Default + Clone + Send + Sync + Debug {
-    fn chain_name(&self) -> Chain;
+    fn chain(&self) -> Chain;
 
     fn client_id(&self) -> String;
 }
@@ -19,13 +19,13 @@ pub trait ISession: Default + Clone + Send + Sync + Debug {
 /// Session as a subscription session
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Session {
-    pub chain_name: Chain,
+    pub chain: Chain,
     pub client_id: String,
 }
 
 impl ISession for Session {
-    fn chain_name(&self) -> Chain {
-        self.chain_name
+    fn chain(&self) -> Chain {
+        self.chain
     }
 
     fn client_id(&self) -> String {
@@ -36,7 +36,7 @@ impl ISession for Session {
 impl From<&ElaraRequest> for Session {
     fn from(msg: &ElaraRequest) -> Self {
         Self {
-            chain_name: msg.chain,
+            chain: msg.chain,
             client_id: msg.id.clone(),
         }
     }

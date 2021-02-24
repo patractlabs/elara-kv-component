@@ -61,7 +61,7 @@ where
     let result = serde_json::to_string(&result).expect("serialize a substrate jsonrpc");
     let msg = ElaraSuccessResponse {
         id: session.client_id(),
-        chain: session.chain_name(),
+        chain: session.chain(),
         result,
     };
     serde_json::to_string(&msg).expect("serialize a elara api")
@@ -75,7 +75,7 @@ where
     let data = serde_json::to_string(&data).expect("serialize a substrate jsonrpc");
     let msg = ElaraSubscriptionResponse {
         id: session.client_id(),
-        chain: session.chain_name(),
+        chain: session.chain(),
         data,
     };
     serde_json::to_string(&msg).expect("serialize a elara api")
