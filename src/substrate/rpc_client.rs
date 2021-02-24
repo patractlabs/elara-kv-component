@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 
-use async_jsonrpc_client::{SubscriptionNotification, WsClientError, WsSubscription};
+use async_jsonrpc_client::WsClientError;
 use futures::stream::{Stream, StreamExt};
 use serde::Serialize;
 
+use crate::rpc_client::NotificationStream;
 use crate::{
     rpc_client::RpcClient,
     substrate::{
@@ -15,8 +16,7 @@ use crate::{
     },
     websocket::{WsConnection, WsConnections},
 };
-
-type NotificationStream = WsSubscription<SubscriptionNotification>;
+use std::collections::HashMap;
 
 /// Polkadot related subscription data
 pub struct SubscribedStream {
@@ -26,6 +26,9 @@ pub struct SubscribedStream {
     new_head: NotificationStream,
     finalized_head: NotificationStream,
     grandpa_justifications: NotificationStream,
+
+    // TODO: support register
+    inner: HashMap<&'static str, NotificationStream>,
 }
 
 pub async fn start_subscribe(client: &RpcClient) -> Result<SubscribedStream, WsClientError> {
@@ -55,10 +58,11 @@ pub async fn start_subscribe(client: &RpcClient) -> Result<SubscribedStream, WsC
         all_head,
         new_head,
         finalized_head,
+        inner: Default::default(),
     })
 }
 
-async fn send_messages_to_conns<T, S>(
+pub async fn send_messages_to_conns<T, S>(
     mut stream: S,
     conns: WsConnections,
     // Do send logic for every connection.
@@ -79,6 +83,14 @@ async fn send_messages_to_conns<T, S>(
 }
 
 impl SubscribedStream {
+    pub fn register_subscription(
+        &mut self,
+        method: &'static str,
+        stream: NotificationStream,
+    ) -> Option<NotificationStream> {
+        self.inner.insert(method, stream)
+    }
+
     // TODO: extract it as trait method
     // start to push subscription data to all connections in background
     pub fn start(self, conns: WsConnections) {
@@ -89,6 +101,7 @@ impl SubscribedStream {
             all_head,
             new_head,
             finalized_head,
+            inner: _inner,
         } = self;
 
         // we spawn task for every one subscription

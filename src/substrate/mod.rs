@@ -1,10 +1,9 @@
 pub mod client;
+pub mod polkadot;
 mod rpc;
 pub mod rpc_client;
 mod service;
 pub mod session;
-
-pub const NODE_NAME: &str = "polkadot";
 
 use serde::{Deserialize, Serialize};
 

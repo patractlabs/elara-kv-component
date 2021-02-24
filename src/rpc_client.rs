@@ -4,6 +4,7 @@ use async_jsonrpc_client::{
 };
 
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
+pub type NotificationStream = WsSubscription<SubscriptionNotification>;
 
 /// RpcClient is used to subscribe some data from different chain node.
 pub struct RpcClient {

@@ -201,7 +201,8 @@ impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
 
 // The followings are used to send subscription data to users
 
-async fn send_subscription_data<ST, Session, Input>(
+/// Send a subscription data according to Transformer's output
+pub async fn send_subscription_data<ST, Session, Input>(
     sessions: Arc<RwLock<Sessions<Session>>>,
     conn: WsConnection,
     data: Input,
