@@ -47,7 +47,7 @@ impl MessageHandler for RequestHandler {
             .ok_or_else(|| Failure::new(Error::method_not_found(), Some(request.id.clone())))
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
             .map_err(|res| {
-                ElaraResponse::success(session.client_id.clone(), session.chain_name.clone(), res)
+                ElaraResponse::success(session.client_id.clone(), session.chain_name, res)
             })?;
 
         let method = request.method.clone();

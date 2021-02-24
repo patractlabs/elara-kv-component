@@ -26,10 +26,10 @@ use tokio_tungstenite::{
 };
 
 use crate::{
-    config::{Config, NodeConfig},
-    message::{ElaraRequest, ElaraResponse, Error, Failure, MethodCall, Version},
+    cmd::ServiceConfig,
+    message::{ElaraRequest, ElaraResponse, Error, Failure, MethodCall},
     session::Session,
-    substrate,
+    substrate, Chain,
 };
 
 /// A wrapper for WebSocketStream Server
@@ -45,13 +45,13 @@ impl WsServer {
     }
 
     /// returns a WebSocketStream and corresponding connection as a state
-    pub async fn accept(&self, cfg: Config) -> tungstenite::Result<WsConnection> {
+    pub async fn accept(&self, cfg: ServiceConfig) -> tungstenite::Result<WsConnection> {
         let (stream, addr) = self.listener.accept().await?;
         let stream = accept_async(stream).await?;
         let (sender, receiver) = stream.split();
         Ok(WsConnection {
             closed: Default::default(),
-            cfg,
+            config: cfg,
             addr,
             sender: Arc::new(Mutex::new(sender)),
             receiver: Arc::new(Mutex::new(receiver)),
@@ -77,11 +77,11 @@ pub trait MessageHandler: Send + Sync {
 #[derive(Clone)]
 pub struct WsConnection {
     closed: Arc<AtomicBool>,
-    cfg: Config,
+    config: ServiceConfig,
     addr: SocketAddr,
     sender: Arc<Mutex<WsSender>>,
     receiver: Arc<Mutex<WsReceiver>>,
-    chain_handlers: Arc<RwLock<HashMap<&'static str, Box<dyn MessageHandler>>>>,
+    chain_handlers: Arc<RwLock<HashMap<Chain, Box<dyn MessageHandler>>>>,
     pub sessions: ConnectionSessions,
 }
 
@@ -153,7 +153,7 @@ impl WsConnection {
 
     pub async fn register_message_handler(
         &mut self,
-        chain_name: &'static str,
+        chain_name: Chain,
         handler: impl MessageHandler + 'static,
     ) -> &mut Self {
         self.chain_handlers
@@ -188,36 +188,29 @@ impl WsConnection {
         let msg = serde_json::from_str::<ElaraRequest>(msg.as_str())
             .map_err(|_| ElaraResponse::failure(None, None, Error::parse_error()))?;
 
-        validate_chain(&self.cfg.nodes, &msg.chain).map_err(|err| {
-            ElaraResponse::failure(Some(msg.id.clone()), Some(msg.chain.clone()), err)
-        })?;
+        // validate node name
+        if !self.config.validate(&msg.chain) {
+            return Err(ElaraResponse::failure(
+                Some(msg.id.clone()),
+                Some(msg.chain),
+                Error::parse_error(),
+            ));
+        }
 
         let session: Session = Session::from(&msg);
         let request = serde_json::from_str::<MethodCall>(&msg.request)
-            .map_err(|_| Failure {
-                jsonrpc: Version::V2_0,
-                error: Error::parse_error(),
-                id: None,
-            })
+            .map_err(|_| Failure::new(Error::parse_error(), None))
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
-            .map_err(|res| ElaraResponse::success(msg.id.clone(), msg.chain.clone(), res))?;
+            .map_err(|res| ElaraResponse::success(msg.id.clone(), msg.chain, res))?;
 
         let chain_handlers = self.chain_handlers.read().await;
 
-        let handler = chain_handlers.get(msg.chain.as_str());
+        let handler = chain_handlers.get(&msg.chain);
 
         let handler = handler.ok_or_else(Error::parse_error).map_err(|err| {
-            ElaraResponse::failure(Some(msg.id.clone()), Some(msg.chain.clone()), err)
+            ElaraResponse::failure(Some(msg.id.clone()), Some(msg.chain), err)
         })?;
         handler.handle(session, request)
-    }
-}
-
-fn validate_chain(nodes: &HashMap<String, NodeConfig>, chain: &str) -> Result<(), Error> {
-    if nodes.contains_key(chain) {
-        Ok(())
-    } else {
-        Err(Error::parse_error())
     }
 }
 

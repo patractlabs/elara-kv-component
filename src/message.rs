@@ -1,13 +1,13 @@
 pub use async_jsonrpc_client::*;
 use serde::{Deserialize, Serialize};
 
-use crate::session::ISession;
+use crate::{session::ISession, Chain};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ElaraRequest {
     pub id: String,
-    pub chain: String,
+    pub chain: Chain,
     pub request: String,
 }
 
@@ -20,11 +20,11 @@ pub enum ElaraResponse {
 }
 
 impl ElaraResponse {
-    pub fn success(id: String, chain: String, result: String) -> Self {
+    pub fn success(id: String, chain: Chain, result: String) -> Self {
         Self::ElaraSuccess(ElaraSuccessResponse { id, chain, result })
     }
 
-    pub fn failure(id: Option<String>, chain: Option<String>, error: Error) -> Self {
+    pub fn failure(id: Option<String>, chain: Option<Chain>, error: Error) -> Self {
         Self::ElaraFailure(ElaraFailureResponse { id, chain, error })
     }
 }
@@ -33,7 +33,7 @@ impl ElaraResponse {
 #[serde(deny_unknown_fields)]
 pub struct ElaraSuccessResponse {
     pub id: String,
-    pub chain: String,
+    pub chain: Chain,
     pub result: String,
 }
 
@@ -41,7 +41,7 @@ pub struct ElaraSuccessResponse {
 #[serde(deny_unknown_fields)]
 pub struct ElaraFailureResponse {
     pub id: Option<String>,
-    pub chain: Option<String>,
+    pub chain: Option<Chain>,
     pub error: Error,
 }
 
@@ -49,7 +49,7 @@ pub struct ElaraFailureResponse {
 #[serde(deny_unknown_fields)]
 pub struct ElaraSubscriptionResponse {
     pub id: String,
-    pub chain: String,
+    pub chain: Chain,
     pub data: String,
 }
 
@@ -102,6 +102,7 @@ mod tests {
             ])),
             Id::Num(141)
         );
+        assert_eq!(request.chain, Chain::Polkadot);
         let req = serde_json::from_str::<MethodCall>(&request.request).unwrap();
         assert_eq!(req, actual_request);
     }

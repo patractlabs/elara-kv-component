@@ -14,9 +14,9 @@ addr = "localhost:9002"
 # 链节点相关的配置，目前只支持 `polkadot` 和 `kusama`
 [nodes.polkadot]
 # 配置 polkadot 的节点地址
-addr = "wss://rpc.polkadot.io"
+url = "wss://rpc.polkadot.io"
 [nodes.kusama]
-addr = "wss://kusama-rpc.polkadot.io"
+url = "wss://kusama-rpc.polkadot.io"
 ```
 
 ## Start

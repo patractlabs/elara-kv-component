@@ -2,7 +2,10 @@ use std::{collections::HashSet, sync::Arc};
 
 use tokio::sync::RwLock;
 
-use crate::session::{ISession, NoParamSession, NoParamSessions, Session, Sessions};
+use crate::{
+    session::{ISession, NoParamSession, NoParamSessions, Session, Sessions},
+    Chain,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct SubscriptionSessions {
@@ -33,7 +36,7 @@ pub type RuntimeVersionSessions = NoParamSessions;
 pub type StorageSession = (Session, StorageKeys<HashSet<String>>);
 
 impl ISession for StorageSession {
-    fn chain_name(&self) -> String {
+    fn chain_name(&self) -> Chain {
         self.0.chain_name()
     }
 

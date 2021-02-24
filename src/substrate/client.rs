@@ -213,6 +213,7 @@ fn _handle_chain_subscribeHeads(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Chain;
     use crate::message::{Id, Params, Success};
     use crate::session::Sessions;
 
@@ -223,7 +224,7 @@ mod tests {
 
         // subscribe
         let session = Session {
-            chain_name: "test-net".to_string(),
+            chain_name: Chain::Polkadot,
             client_id: "0x1".to_string(),
         };
 
@@ -243,7 +244,7 @@ mod tests {
 
         // unsubscribe
         let session = Session {
-            chain_name: "test-net".to_string(),
+            chain_name: Chain::Polkadot,
             client_id: "0x2".to_string(),
         };
         let request = MethodCall::new(
