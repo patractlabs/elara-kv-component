@@ -155,11 +155,12 @@ impl WsConnection {
         &mut self,
         chain_name: &'static str,
         handler: impl MessageHandler + 'static,
-    ) {
+    ) -> &mut Self {
         self.chain_handlers
             .write()
             .await
             .insert(chain_name, Box::new(handler));
+        self
     }
 
     /// Send successful response in other channel handler.
