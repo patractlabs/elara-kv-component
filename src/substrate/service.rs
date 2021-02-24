@@ -7,9 +7,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::rpc_client::NotificationStream;
-use crate::substrate::rpc_client::send_messages_to_conns;
-use crate::websocket::WsConnections;
 use crate::{
     message::{
         serialize_subscribed_message, Id, SubscriptionNotification, SubscriptionNotificationParams,
@@ -32,7 +29,6 @@ use crate::{
     },
     websocket::WsConnection,
 };
-use crate::substrate::Node;
 
 /// According to some states or sessions, we transform some data from chain node to new suitable values.
 /// Mainly include some simple filtering operations.
@@ -205,7 +201,8 @@ impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
 
 // The followings are used to send subscription data to users
 
-async fn send_subscription_data<ST, Session, Input>(
+/// Send a subscription data according to Transformer's output
+pub async fn send_subscription_data<ST, Session, Input>(
     sessions: Arc<RwLock<Sessions<Session>>>,
     conn: WsConnection,
     data: Input,
@@ -234,98 +231,6 @@ async fn send_subscription_data<ST, Session, Input>(
                 }
             }
         }
-    }
-}
-
-// TODO: refine this trait
-pub trait SubscriptionDataSender {
-    // a async task background to consume the stream for sending data to client
-    fn spawn(&self, stream: NotificationStream);
-}
-
-pub struct StateStorageSender {
-    conns: WsConnection,
-    // node: Node,
-    // sessions: Arc<RwLock<StorageSessions>>,
-}
-
-impl StateStorageSender {
-    pub fn new(conns: WsConnections) -> Self {
-        Self {
-            conns,
-        }
-    }
-}
-
-impl SubscriptionDataSender for StateStorageSender {
-    fn spawn(&self, storage: NotificationStream) {
-        let conns = self.conns.clone();
-        // let node = self.node;
-        let sessions = self.sessions.clone();
-
-        tokio::spawn(send_messages_to_conns(
-            storage,
-            conns,
-            move |conn, data| {
-                let sessions = match node {
-                    Node::Polkadot => conn.sessions.polkadot_sessions.storage_sessions.clone(),
-                    Node::Kusama => conn.sessions.kusama_sessions.storage_sessions.clone(),
-                };
-
-                match serde_json::value::from_value(data.params.result.clone()) {
-                    Ok(data) => send_state_storage(
-                        sessions,
-                        conn,
-                        data,
-                    ),
-
-                    Err(err) => {
-                        log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
-                    }
-                };
-            },
-        ));
-    }
-}
-
-pub struct StateRuntimeVersionSender {
-    conns: WsConnections,
-}
-
-impl StateRuntimeVersionSender {
-    pub fn new(conns: WsConnections) -> Self {
-        Self {
-            conns
-        }
-    }
-}
-
-impl SubscriptionDataSender for StateRuntimeVersionSender {
-    fn spawn(&self, storage: NotificationStream) {
-        let conns = self.conns.clone();
-        let node = self.node;
-        tokio::spawn(send_messages_to_conns(
-            storage,
-            conns,
-            move |conn, data| {
-                let sessions = match node {
-                    Node::Polkadot => conn.sessions.polkadot_sessions.storage_sessions.clone(),
-                    Node::Kusama => conn.sessions.kusama_sessions.storage_sessions.clone(),
-                };
-
-                match serde_json::value::from_value(data.params.result.clone()) {
-                    Ok(data) => send_state_runtime_version(
-                        sessions,
-                        conn,
-                        data,
-                    ),
-
-                    Err(err) => {
-                        log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
-                    }
-                };
-            },
-        ));
     }
 }
 

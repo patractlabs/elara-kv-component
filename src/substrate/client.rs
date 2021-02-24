@@ -2,31 +2,24 @@
 //! Set sessions according to user's subscription request
 
 use std::{
-    borrow::BorrowMut,
     collections::{HashMap, HashSet},
-    fmt::Debug,
-    sync::Arc,
 };
 use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    RwLock,
+    mpsc::{UnboundedReceiver, UnboundedSender},
 };
-use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     message::{
-        serialize_success_response, ElaraResponse, Error, Failure, MethodCall, Params, Success,
+        Error, MethodCall, Params, Success,
         Value,
     },
     session::{ISessions, NoParamSessions, Session, Sessions},
     substrate::{
-        constants,
         session::{
             AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
-            StorageKeys, StorageSessions, SubscriptionSessions, WatchExtrinsicSessions,
+            StorageKeys, StorageSessions, WatchExtrinsicSessions,
         },
     },
-    websocket::{MessageHandler, WsConnection},
 };
 
 // Note: we need the session to handle the method call

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use async_jsonrpc_client::{SubscriptionNotification, WsClientError, WsSubscription};
+use async_jsonrpc_client::{WsClientError};
 use futures::stream::{Stream, StreamExt};
 use serde::Serialize;
 
@@ -16,10 +16,7 @@ use crate::{
     },
     websocket::{WsConnection, WsConnections},
 };
-use futures::future::BoxFuture;
 use std::collections::HashMap;
-use crate::substrate::service::{SubscriptionDataSender, StateStorageSender};
-use crate::substrate::Node;
 
 /// Polkadot related subscription data
 pub struct SubscribedStream {
@@ -30,6 +27,7 @@ pub struct SubscribedStream {
     finalized_head: NotificationStream,
     grandpa_justifications: NotificationStream,
 
+    // TODO: support register
     inner: HashMap<&'static str, NotificationStream>,
 }
 
@@ -84,14 +82,6 @@ pub async fn send_messages_to_conns<T, S>(
     }
 }
 
-pub fn new_sender(node: Node, method: &str, conns: WsConnections) -> Box<dyn SubscriptionDataSender> {
-    match method {
-        constants::state_subscribeStorage => Box::new(StateStorageSender::new(conns, )),
-
-        _ => unimplemented!(),
-    }
-}
-
 impl SubscribedStream {
     pub fn register_subscription(&mut self, method: &'static str, stream: NotificationStream) -> Option<NotificationStream> {
         self.inner.insert(method, stream)
@@ -107,14 +97,10 @@ impl SubscribedStream {
             all_head,
             new_head,
             finalized_head,
-            inner
+            inner: _inner
         } = self;
 
 
-        for (method, stream) in inner {
-            let sender = new_sender(method, conns.clone());
-            sender.spawn(stream);
-        }
         // we spawn task for every one subscription
 
         {
