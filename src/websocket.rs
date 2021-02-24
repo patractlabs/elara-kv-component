@@ -207,9 +207,9 @@ impl WsConnection {
 
         let handler = chain_handlers.get(&msg.chain);
 
-        let handler = handler.ok_or_else(Error::parse_error).map_err(|err| {
-            ElaraResponse::failure(Some(msg.id.clone()), Some(msg.chain), err)
-        })?;
+        let handler = handler
+            .ok_or_else(Error::parse_error)
+            .map_err(|err| ElaraResponse::failure(Some(msg.id.clone()), Some(msg.chain), err))?;
         handler.handle(session, request)
     }
 }

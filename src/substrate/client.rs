@@ -213,9 +213,9 @@ fn _handle_chain_subscribeHeads(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Chain;
     use crate::message::{Id, Params, Success};
     use crate::session::Sessions;
+    use crate::Chain;
 
     #[allow(non_snake_case)]
     #[tokio::test]
