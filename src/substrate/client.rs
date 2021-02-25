@@ -9,7 +9,7 @@ use crate::{
     session::{ISessions, NoParamSessions, Session, Sessions},
     substrate::session::{
         AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
-        StorageKeys, StorageSessions, WatchExtrinsicSessions,
+        StorageKeys, StorageSessions,
     },
 };
 
@@ -19,17 +19,6 @@ pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
 
 pub type MethodSenders = HashMap<&'static str, MethodSender>;
 pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
-
-// TODO: now we don't support extrinsic
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-pub fn handle_author_unwatchExtrinsic(
-    sessions: &mut WatchExtrinsicSessions,
-    session: Session,
-    request: MethodCall,
-) -> Result<Success, Error> {
-    handle_unsubscribe(sessions, session, request)
-}
 
 #[allow(non_snake_case)]
 pub fn handle_state_unsubscribeStorage(

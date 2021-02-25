@@ -1,9 +1,11 @@
 //! Polkadot related code
 
+pub mod rpc_client;
+
 use crate::message::{
     serialize_success_response, ElaraResponse, Error, Failure, MethodCall, Success,
 };
-use crate::session::{ISessions, Session};
+use crate::session::{ISessions, Session, ISession, Sessions};
 use crate::substrate::client::{
     handle_chain_subscribeAllHeads, handle_chain_subscribeFinalizedHeads,
     handle_chain_subscribeNewHeads, handle_chain_unsubscribeAllHeads,
@@ -14,7 +16,7 @@ use crate::substrate::client::{
     MethodReceivers, MethodSenders,
 };
 use crate::substrate::constants;
-use crate::substrate::session::SubscriptionSessions;
+use crate::substrate::session::{SubscriptionSessions, StorageSessions};
 use crate::websocket::{MessageHandler, WsConnection};
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
@@ -111,6 +113,50 @@ async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
         };
 
         let _res = conn.send_message(Message::Text(msg)).await;
+    }
+}
+
+// This is a special version to handle state storage
+async fn start_state_storage_handle(
+    sessions: Arc<RwLock<StorageSessions>>,
+    conn: WsConnection,
+    mut receiver: MethodReceiver,
+) {
+    while let Some((session, request)) = receiver.recv().await {
+        // We try to lock it instead of keeping it locked.
+        // Because the lock time may be longer.
+        let mut sessions = sessions.write().await;
+        let res = handle_state_subscribeStorage(sessions.borrow_mut(), session.clone(), request.clone());
+
+        let res = res
+            .map(|success| serialize_success_response(&session, &success))
+            .map_err(|err| serialize_success_response(&session, &err));
+        match res {
+            Ok(s) => {
+                let _res = conn.send_message(Message::Text(s)).await;
+
+                let client = conn.clients.get(&session.chain_name()).expect("wont' panic");
+                let client = client.lock().await;
+                let params: Vec<Vec<String>> = request.params.unwrap_or_default().parse().expect("won't panic");
+
+                let keys =  match params {
+                    arr if arr.len() > 1 => { vec![]}
+                    arr if arr.is_empty() || arr[0].is_empty() => { vec![]},
+                    arrs => {
+                        arrs[0].clone()
+                    }
+                };
+
+                for key in keys {
+                    client.state_get_storage(key).await;
+                }
+
+            },
+            Err(s) => {
+                let _res = conn.send_message(Message::Text(s)).await;
+            },
+        };
+
     }
 }
 

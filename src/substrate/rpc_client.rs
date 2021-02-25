@@ -101,7 +101,7 @@ impl SubscribedStream {
             all_head,
             new_head,
             finalized_head,
-            inner: _inner,
+            ..
         } = self;
 
         // we spawn task for every one subscription

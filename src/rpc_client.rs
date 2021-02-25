@@ -2,6 +2,10 @@ use async_jsonrpc_client::{
     Output, Params, PubsubTransport, SubscriptionNotification, Transport, WsClient, WsClientError,
     WsSubscription,
 };
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use crate::message::Value;
 
 use crate::Chain;
 
@@ -14,6 +18,9 @@ pub struct RpcClient {
     node: Chain,
     addr: String,
 }
+
+pub type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
+
 
 impl RpcClient {
     pub async fn new(node: Chain, addr: impl Into<String>) -> Result<Self> {
@@ -34,6 +41,10 @@ impl RpcClient {
     #[inline]
     pub async fn system_health(&self) -> Result<Output> {
         self.ws.request("system_health", None).await
+    }
+
+    pub async fn state_get_storage(&self, key: String) -> Result<Output> {
+        self.ws.request("state_getStorage", Some(Params::Array(vec![Value::String(key)]))).await
     }
 
     pub async fn is_alive(&self) -> bool {
