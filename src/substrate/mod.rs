@@ -1,9 +1,23 @@
+use crate::message::MethodCall;
+use crate::session::Session;
+use std::collections::HashMap;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
 pub mod client;
+mod handlers;
+pub mod kusama;
 pub mod polkadot;
 mod rpc;
 pub mod rpc_client;
 mod service;
 pub mod session;
+
+// Note: we need the session to handle the method call
+pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
+pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
+
+pub type MethodSenders = HashMap<&'static str, MethodSender>;
+pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
 
 #[allow(non_upper_case_globals)]
 pub mod constants {

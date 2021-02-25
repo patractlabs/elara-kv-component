@@ -2,7 +2,7 @@
 //! Set sessions according to user's subscription request
 
 use std::collections::{HashMap, HashSet};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+// use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
     message::{Error, MethodCall, Params, Success, Value},
@@ -12,13 +12,6 @@ use crate::{
         StorageKeys, StorageSessions,
     },
 };
-
-// Note: we need the session to handle the method call
-pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
-pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
-
-pub type MethodSenders = HashMap<&'static str, MethodSender>;
-pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
 
 #[allow(non_snake_case)]
 pub fn handle_state_unsubscribeStorage(
@@ -186,6 +179,7 @@ fn _handle_no_param_method_call(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), session);
+    // subscription id as result
     Ok(Success::new(id.into(), request.id))
 }
 

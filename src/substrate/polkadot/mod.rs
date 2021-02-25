@@ -3,20 +3,22 @@
 pub mod rpc_client;
 
 use crate::message::{
-    serialize_success_response, ElaraResponse, Error, Failure, MethodCall, Success,
+    serialize_failure_response, serialize_subscribed_message, serialize_success_response,
+    ElaraResponse, Error, Failure, Id, MethodCall, Params, PubsubTransport,
+    SubscriptionNotificationParams, Success,
 };
-use crate::session::{ISessions, Session, ISession, Sessions};
+use crate::session::{ISession, ISessions, Session, Sessions};
 use crate::substrate::client::{
     handle_chain_subscribeAllHeads, handle_chain_subscribeFinalizedHeads,
     handle_chain_subscribeNewHeads, handle_chain_unsubscribeAllHeads,
     handle_chain_unsubscribeFinalizedHeads, handle_chain_unsubscribeNewHeads,
     handle_grandpa_subscribeJustifications, handle_grandpa_unsubscribeJustifications,
     handle_state_subscribeRuntimeVersion, handle_state_subscribeStorage,
-    handle_state_unsubscribeRuntimeVersion, handle_state_unsubscribeStorage, MethodReceiver,
-    MethodReceivers, MethodSenders,
+    handle_state_unsubscribeRuntimeVersion, handle_state_unsubscribeStorage,
 };
-use crate::substrate::constants;
-use crate::substrate::session::{SubscriptionSessions, StorageSessions};
+use crate::substrate::rpc::state::StateStorage;
+use crate::substrate::session::{StorageSessions, SubscriptionSessions};
+use crate::substrate::{constants, MethodReceiver, MethodReceivers, MethodSenders};
 use crate::websocket::{MessageHandler, WsConnection};
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
@@ -106,7 +108,7 @@ async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
 
         let res = res
             .map(|success| serialize_success_response(&session, &success))
-            .map_err(|err| serialize_success_response(&session, &err));
+            .map_err(|err| serialize_failure_response(&session, err));
         let msg = match res {
             Ok(s) => s,
             Err(s) => s,
@@ -116,7 +118,8 @@ async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
     }
 }
 
-// This is a special version to handle state storage
+// This is a special version for handling state storage.
+// Because we need the initial changes from chain.
 async fn start_state_storage_handle(
     sessions: Arc<RwLock<StorageSessions>>,
     conn: WsConnection,
@@ -126,43 +129,104 @@ async fn start_state_storage_handle(
         // We try to lock it instead of keeping it locked.
         // Because the lock time may be longer.
         let mut sessions = sessions.write().await;
-        let res = handle_state_subscribeStorage(sessions.borrow_mut(), session.clone(), request.clone());
-
-        let res = res
-            .map(|success| serialize_success_response(&session, &success))
-            .map_err(|err| serialize_success_response(&session, &err));
+        let res =
+            handle_state_subscribeStorage(sessions.borrow_mut(), session.clone(), request.clone());
         match res {
-            Ok(s) => {
-                let _res = conn.send_message(Message::Text(s)).await;
+            Ok(success) => {
+                let msg = serialize_success_response(&session, &success);
+                let _res = conn.send_message(Message::Text(msg)).await;
 
-                let client = conn.clients.get(&session.chain_name()).expect("wont' panic");
-                let client = client.lock().await;
-                let params: Vec<Vec<String>> = request.params.unwrap_or_default().parse().expect("won't panic");
-
-                let keys =  match params {
-                    arr if arr.len() > 1 => { vec![]}
-                    arr if arr.is_empty() || arr[0].is_empty() => { vec![]},
-                    arrs => {
-                        arrs[0].clone()
-                    }
+                // we need get the latest storage for these keys
+                let clients = conn.clients.clone();
+                let client = clients.get(&session.chain()).expect("never panic");
+                let stream = {
+                    let client = client.read().await;
+                    log::info!("start_subscribe {:?}", request.params);
+                    client
+                        .subscribe(constants::state_subscribeStorage, request.params)
+                        .await
                 };
 
-                for key in keys {
-                    client.state_get_storage(key).await;
+                match stream {
+                    Err(err) => {
+                        log::warn!(
+                            "Error occurred when get latest storage for `{}`: {}",
+                            session.chain(),
+                            err
+                        )
+                    }
+
+                    Ok(mut stream) => {
+                        // we only get the first item for initial changes
+                        let latest = stream.next().await.expect("never panic");
+                        log::info!("{:?}", latest);
+                        let result: Result<StateStorage, _> =
+                            serde_json::value::from_value(latest.params.result.clone());
+
+                        // when get the first item, we unsubscribe this.
+                        // TODO: need to handle error ?
+                        let client = client.clone();
+                        tokio::spawn(async move {
+                            let client = client.read().await;
+                            let res = client
+                                .unsubscribe(constants::state_unsubscribeStorage, stream.id.clone())
+                                .await;
+
+                            match res {
+                                Ok(cancel) => {
+                                    log::warn!(
+                                        "cannot cancel subscription `{}`, id: {}",
+                                        constants::state_unsubscribeStorage,
+                                        stream.id
+                                    );
+                                }
+                                Err(err) => {
+                                    log::warn!(
+                                        "Error occurred when send `{}`, id: {}, error: {}",
+                                        constants::state_unsubscribeStorage,
+                                        stream.id,
+                                        err
+                                    )
+                                }
+                            };
+                        });
+
+                        match result {
+                            Ok(result) => {
+                                let subscription_id: Id =
+                                    serde_json::from_value(success.result).expect("never panic");
+
+                                let result = serde_json::to_value(result).expect("never panic");
+                                let best_changes = crate::message::SubscriptionNotification::new(
+                                    constants::state_storage,
+                                    SubscriptionNotificationParams::new(subscription_id, result),
+                                );
+                                let msg = serialize_subscribed_message(&session, &best_changes);
+                                let _res = conn.send_message(Message::Text(msg)).await;
+                            }
+
+                            Err(err) => {
+                                log::warn!(
+                                    "Receive an illegal subscribed data: {}: {}",
+                                    err,
+                                    &latest
+                                )
+                            }
+                        };
+                    }
                 }
-
-            },
-            Err(s) => {
-                let _res = conn.send_message(Message::Text(s)).await;
-            },
+            }
+            Err(err) => {
+                let msg = serialize_failure_response(&session, err);
+                let _res = conn.send_message(Message::Text(msg)).await;
+            }
         };
-
     }
 }
 
 /// Start to spawn handler task about subscription jsonrpc in background to response for every subscription.
 /// It maintains the sessions for this connection.
-fn handle_subscription_response(
+pub fn handle_subscription_response(
     conn: WsConnection,
     sessions: SubscriptionSessions,
     receivers: MethodReceivers,
@@ -170,11 +234,10 @@ fn handle_subscription_response(
     for (method, receiver) in receivers.into_iter() {
         match method {
             constants::state_subscribeStorage => {
-                tokio::spawn(start_handle(
+                tokio::spawn(start_state_storage_handle(
                     sessions.storage_sessions.clone(),
                     conn.clone(),
                     receiver,
-                    handle_state_subscribeStorage,
                 ));
             }
             constants::state_unsubscribeStorage => {

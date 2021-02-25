@@ -5,6 +5,8 @@ use futures::StreamExt;
 use tokio::{sync::Mutex, time::Duration};
 use tokio_tungstenite::tungstenite::{Error, Message};
 
+use elara_kv_component::rpc_client::{ArcRpcClient, RpcClients};
+use elara_kv_component::substrate::rpc_client::SubstrateClient;
 use elara_kv_component::{
     cmd::*,
     rpc_client::{self, RpcClient},
@@ -12,8 +14,7 @@ use elara_kv_component::{
     websocket::{WsConnection, WsConnections, WsServer},
     Chain,
 };
-
-type WsClients = HashMap<String, Arc<Mutex<RpcClient>>>;
+use tokio::sync::RwLock;
 
 const CONN_EXPIRED_TIME_SECS: u64 = 10;
 const CHECK_CONN_ALIVE_SECS: u64 = 10;
@@ -34,11 +35,11 @@ async fn main() -> Result<()> {
     let mut connections = WsConnections::new();
     tokio::spawn(remove_expired_connections(connections.clone()));
 
-    let _clients = create_clients(&config, connections.clone()).await?;
+    let clients = create_clients(&config, connections.clone()).await?;
 
     // accept a new connection
     loop {
-        match server.accept(config.clone()).await {
+        match server.accept(clients.clone(), config.clone()).await {
             Ok(conn) => {
                 connections.add(conn.clone()).await;
 
@@ -80,31 +81,33 @@ async fn remove_expired_connections(mut conns: WsConnections) {
 async fn create_clients(
     cfg: &ServiceConfig,
     connections: WsConnections,
-) -> rpc_client::Result<WsClients> {
-    let mut clients: WsClients = Default::default();
+) -> rpc_client::Result<RpcClients> {
+    let mut clients: RpcClients = Default::default();
     // started to subscribe chain node by ws client
-    for (node, cfg) in cfg.nodes.iter() {
-        let client = RpcClient::new(*node, cfg.url.clone()).await?;
-        match node {
-            Chain::Polkadot => subscribe_polkadot(connections.clone(), &client).await,
+    for (chain, cfg) in cfg.nodes.iter() {
+        let client = RpcClient::new(*chain, cfg.url.clone()).await?;
+        let client = Arc::new(RwLock::new(client));
+        match chain {
+            Chain::Polkadot => {
+                subscribe_polkadot(connections.clone(), SubstrateClient::new(client.clone())).await
+            }
             Chain::Kusama => subscribe_kusama(connections.clone(), &client).await,
         }
 
-        let client = Arc::new(Mutex::new(client));
         tokio::spawn(health_check(connections.clone(), client.clone()));
         // maintains these clients
-        clients.insert(node.to_string(), client);
+        clients.insert(*chain, client);
     }
 
     Ok(clients)
 }
 
 // if rpc client is not alive, we reconnect to peer
-async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>) {
+async fn health_check(connections: WsConnections, client: ArcRpcClient) {
     loop {
         tokio::time::sleep(Duration::from_secs(CHECK_CONN_ALIVE_SECS)).await;
 
-        let mut client = client.lock().await;
+        let mut client = client.write().await;
         if !client.is_alive().await {
             log::info!("Trying to reconnect to `{}`...", client.node_name());
             let res = client.reconnect().await;
@@ -114,8 +117,13 @@ async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>)
 
                 Ok(()) => {
                     let res = match client.node_name() {
-                        Chain::Polkadot => substrate::rpc_client::start_subscribe(&*client).await,
-                        Chain::Kusama => substrate::rpc_client::start_subscribe(&*client).await,
+                        Chain::Polkadot => {
+                            substrate::polkadot::rpc_client::start_subscribe(&*client).await
+                        }
+                        // TODO: fix it
+                        Chain::Kusama => {
+                            substrate::polkadot::rpc_client::start_subscribe(&*client).await
+                        }
                     };
                     match res {
                         Ok(stream) => {
@@ -139,9 +147,9 @@ async fn health_check(connections: WsConnections, client: Arc<Mutex<RpcClient>>)
     }
 }
 
-async fn subscribe_polkadot(connections: WsConnections, client: &RpcClient) {
+async fn subscribe_polkadot(connections: WsConnections, mut client: SubstrateClient) {
     log::info!("Start to subscribe polkadot from `{}`", client.addr());
-    let stream = substrate::rpc_client::start_subscribe(client)
+    let stream = substrate::polkadot::rpc_client::register_subscriptions(&mut client)
         .await
         .expect("Cannot subscribe polkadot node");
     stream.start(connections.clone());
@@ -149,7 +157,8 @@ async fn subscribe_polkadot(connections: WsConnections, client: &RpcClient) {
 
 async fn subscribe_kusama(connections: WsConnections, client: &RpcClient) {
     log::info!("Start to subscribe kusama from `{}`", client.addr());
-    let stream = substrate::rpc_client::start_subscribe(client)
+    // TODO: fix it
+    let stream = substrate::polkadot::rpc_client::start_subscribe(&*client)
         .await
         .expect("Cannot subscribe polkadot node");
     stream.start(connections.clone());
@@ -163,7 +172,7 @@ async fn register_handlers(mut conn: WsConnection) {
     .await;
     conn.register_message_handler(
         Chain::Kusama,
-        substrate::polkadot::RequestHandler::new(conn.clone()),
+        substrate::kusama::RequestHandler::new(conn.clone()),
     )
     .await;
 }

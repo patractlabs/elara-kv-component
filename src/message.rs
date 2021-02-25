@@ -53,6 +53,18 @@ pub struct ElaraSubscriptionResponse {
     pub data: String,
 }
 
+pub fn serialize_failure_response<S>(session: &S, error: Error) -> String
+where
+    S: ISession,
+{
+    let msg = ElaraFailureResponse {
+        id: Some(session.client_id()),
+        chain: Some(session.chain()),
+        error,
+    };
+    serde_json::to_string(&msg).expect("serialize a elara api")
+}
+
 pub fn serialize_success_response<T, S>(session: &S, result: &T) -> String
 where
     T: Serialize,
