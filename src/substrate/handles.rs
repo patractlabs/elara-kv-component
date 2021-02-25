@@ -1,35 +1,17 @@
 //! Client related session handlers
 //! Set sessions according to user's subscription request
 
-use std::collections::{HashMap, HashSet};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use std::collections::HashSet;
+// use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
     message::{Error, MethodCall, Params, Success, Value},
     session::{ISessions, NoParamSessions, Session, Sessions},
     substrate::session::{
         AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
-        StorageKeys, StorageSessions, WatchExtrinsicSessions,
+        StorageKeys, StorageSessions,
     },
 };
-
-// Note: we need the session to handle the method call
-pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
-pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
-
-pub type MethodSenders = HashMap<&'static str, MethodSender>;
-pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
-
-// TODO: now we don't support extrinsic
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-pub fn handle_author_unwatchExtrinsic(
-    sessions: &mut WatchExtrinsicSessions,
-    session: Session,
-    request: MethodCall,
-) -> Result<Success, Error> {
-    handle_unsubscribe(sessions, session, request)
-}
 
 #[allow(non_snake_case)]
 pub fn handle_state_unsubscribeStorage(
@@ -197,6 +179,7 @@ fn _handle_no_param_method_call(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), session);
+    // subscription id as result
     Ok(Success::new(id.into(), request.id))
 }
 
