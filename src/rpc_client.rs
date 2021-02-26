@@ -1,14 +1,13 @@
-use crate::message::{Id, Value};
+use crate::message::Id;
 use async_jsonrpc_client::{
     Output, Params, PubsubTransport, SubscriptionNotification, Transport, WsClient, WsClientError,
     WsSubscription,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
-use crate::substrate::rpc_client::SubscriptionDispatcher;
-use crate::websocket::WsConnections;
+use crate::substrate::constants::{state_getRuntimeVersion, system_health};
 use crate::Chain;
 
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
@@ -37,23 +36,27 @@ impl RpcClient {
         self.addr.clone()
     }
 
-    pub fn node_name(&self) -> Chain {
+    pub fn chain(&self) -> Chain {
         self.chain
     }
 
     #[inline]
     pub async fn system_health(&self) -> Result<Output> {
-        self.ws.request("system_health", None).await
+        self.ws.request(system_health, None).await
     }
 
-    pub async fn state_get_storage(&self, key: String) -> Result<Output> {
-        self.ws
-            .request(
-                "state_getStorage",
-                Some(Params::Array(vec![Value::String(key)])),
-            )
-            .await
+    pub async fn get_runtime_version(&self) -> Result<Output> {
+        self.ws.request(state_getRuntimeVersion, None).await
     }
+
+    // pub async fn state_get_storage(&self, key: String) -> Result<Output> {
+    //     self.ws
+    //         .request(
+    //             "state_getStorage",
+    //             Some(Params::Array(vec![Value::String(key)])),
+    //         )
+    //         .await
+    // }
 
     pub async fn is_alive(&self) -> bool {
         self.system_health().await.is_ok()

@@ -151,6 +151,10 @@ impl WsConnection {
         self.sender.lock().await.send(msg).await
     }
 
+    pub async fn send_text(&self, text: String) -> tungstenite::Result<()> {
+        self.send_message(Message::Text(text)).await
+    }
+
     pub async fn send_messages(&self, msgs: Vec<Message>) -> tungstenite::Result<()> {
         let mut sender = self.sender.lock().await;
         for msg in msgs.into_iter() {

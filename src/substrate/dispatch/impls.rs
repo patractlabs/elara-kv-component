@@ -1,19 +1,17 @@
-use crate::rpc_client::{ArcRpcClient, NotificationStream, RpcClient};
+use crate::rpc_client::NotificationStream;
 use crate::substrate::constants;
-use crate::substrate::rpc_client::SubscriptionDispatcher;
+use crate::substrate::dispatch::SubscriptionDispatcher;
 use crate::substrate::service::{
     send_chain_all_head, send_chain_finalized_head, send_chain_new_head,
-    send_state_runtime_version, send_state_storage,
+    send_grandpa_justifications, send_state_runtime_version, send_state_storage,
 };
 use crate::websocket::{WsConnection, WsConnections};
 use crate::Chain;
 use futures::{Stream, StreamExt};
 use serde::Serialize;
 use std::fmt::Debug;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StateStorageDispatcher {
     chain: Chain,
 }
@@ -50,6 +48,7 @@ impl SubscriptionDispatcher for StateStorageDispatcher {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct StateRuntimeVersionDispatcher {
     chain: Chain,
 }
@@ -94,6 +93,7 @@ impl SubscriptionDispatcher for StateRuntimeVersionDispatcher {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ChainNewHeadDispatcher {
     chain: Chain,
 }
@@ -106,7 +106,7 @@ impl ChainNewHeadDispatcher {
 
 impl SubscriptionDispatcher for ChainNewHeadDispatcher {
     fn method(&self) -> &'static str {
-        constants::state_subscribeRuntimeVersion
+        constants::chain_subscribeNewHeads
     }
 
     fn dispatch(&mut self, conns: WsConnections, stream: NotificationStream) {
@@ -132,6 +132,7 @@ impl SubscriptionDispatcher for ChainNewHeadDispatcher {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ChainFinalizedHeadDispatcher {
     chain: Chain,
 }
@@ -144,7 +145,7 @@ impl ChainFinalizedHeadDispatcher {
 
 impl SubscriptionDispatcher for ChainFinalizedHeadDispatcher {
     fn method(&self) -> &'static str {
-        constants::state_subscribeRuntimeVersion
+        constants::chain_subscribeFinalizedHeads
     }
 
     fn dispatch(&mut self, conns: WsConnections, stream: NotificationStream) {
@@ -176,6 +177,7 @@ impl SubscriptionDispatcher for ChainFinalizedHeadDispatcher {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ChainAllHeadDispatcher {
     chain: Chain,
 }
@@ -188,7 +190,7 @@ impl ChainAllHeadDispatcher {
 
 impl SubscriptionDispatcher for ChainAllHeadDispatcher {
     fn method(&self) -> &'static str {
-        constants::state_subscribeRuntimeVersion
+        constants::chain_subscribeAllHeads
     }
 
     fn dispatch(&mut self, conns: WsConnections, stream: NotificationStream) {
@@ -204,6 +206,49 @@ impl SubscriptionDispatcher for ChainAllHeadDispatcher {
                     };
 
                     send_chain_all_head(sessions, conn, data);
+                }
+
+                Err(err) => {
+                    log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
+                }
+            };
+        }));
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct GrandpaJustificationDispatcher {
+    chain: Chain,
+}
+
+impl GrandpaJustificationDispatcher {
+    pub fn new(chain: Chain) -> Self {
+        Self { chain }
+    }
+}
+
+impl SubscriptionDispatcher for GrandpaJustificationDispatcher {
+    fn method(&self) -> &'static str {
+        constants::grandpa_subscribeJustifications
+    }
+
+    fn dispatch(&mut self, conns: WsConnections, stream: NotificationStream) {
+        let chain = self.chain;
+        tokio::spawn(send_messages_to_conns(stream, conns, move |conn, data| {
+            match serde_json::value::from_value(data.params.result.clone()) {
+                Ok(data) => {
+                    let sessions = match chain {
+                        Chain::Polkadot => conn
+                            .sessions
+                            .polkadot_sessions
+                            .grandpa_justifications
+                            .clone(),
+                        Chain::Kusama => {
+                            conn.sessions.kusama_sessions.grandpa_justifications.clone()
+                        }
+                    };
+
+                    send_grandpa_justifications(sessions, conn, data);
                 }
 
                 Err(err) => {

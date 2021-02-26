@@ -1,7 +1,7 @@
 //! Client related session handlers
 //! Set sessions according to user's subscription request
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 // use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
