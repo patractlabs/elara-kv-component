@@ -1,12 +1,12 @@
 use crate::message::*;
+use crate::polkadot;
+use crate::polkadot::{handle_subscription_response, method_channel};
+use crate::rpc_client::RpcClient;
 use crate::session::Session;
 use crate::substrate::MethodSenders;
-use crate::websocket::{MessageHandler, WsConnection};
+use crate::websocket::{MessageHandler, WsConnection, WsConnections};
 
 pub const NODE_NAME: &str = "kusama";
-
-pub use crate::polkadot::register_subscriptions;
-use crate::polkadot::{handle_subscription_response, method_channel};
 
 pub struct RequestHandler {
     senders: MethodSenders,
@@ -37,4 +37,11 @@ impl MessageHandler for RequestHandler {
         }
         Ok(())
     }
+}
+
+pub async fn register_subscriptions(
+    client: &RpcClient,
+    conns: WsConnections,
+) -> Result<(), WsClientError> {
+    polkadot::register_subscriptions(client, conns).await
 }
