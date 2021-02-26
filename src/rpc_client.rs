@@ -49,15 +49,6 @@ impl RpcClient {
         self.ws.request(state_getRuntimeVersion, None).await
     }
 
-    // pub async fn state_get_storage(&self, key: String) -> Result<Output> {
-    //     self.ws
-    //         .request(
-    //             "state_getStorage",
-    //             Some(Params::Array(vec![Value::String(key)])),
-    //         )
-    //         .await
-    // }
-
     pub async fn is_alive(&self) -> bool {
         self.system_health().await.is_ok()
     }

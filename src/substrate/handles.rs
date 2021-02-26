@@ -2,7 +2,6 @@
 //! Set sessions according to user's subscription request
 
 use std::collections::HashSet;
-// use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
     message::{Error, MethodCall, Params, Success, Value},
