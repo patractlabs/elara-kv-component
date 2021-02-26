@@ -299,7 +299,6 @@ pub async fn start_state_storage_handle(
     }
 }
 
-
 // TODO: impl a registry for the following pattern
 /// Start to spawn handler task about subscription jsonrpc in background to response for every subscription.
 /// It maintains the sessions for this connection.
