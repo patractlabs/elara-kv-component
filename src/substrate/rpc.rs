@@ -57,5 +57,6 @@ pub mod state {
         pub spec_version: u32,
         pub impl_version: u32,
         pub apis: Vec<(String, u32)>,
+        pub transaction_version: u32,
     }
 }

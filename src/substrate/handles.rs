@@ -1,35 +1,16 @@
 //! Client related session handlers
 //! Set sessions according to user's subscription request
 
-use std::collections::{HashMap, HashSet};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use std::collections::HashSet;
 
 use crate::{
     message::{Error, MethodCall, Params, Success, Value},
     session::{ISessions, NoParamSessions, Session, Sessions},
     substrate::session::{
-        AllHeadSessions, FinalizedHeadSessions, NewHeadSessions, RuntimeVersionSessions,
-        StorageKeys, StorageSessions, WatchExtrinsicSessions,
+        AllHeadSessions, FinalizedHeadSessions, GrandpaJustificationSessions, NewHeadSessions,
+        RuntimeVersionSessions, StorageKeys, StorageSessions,
     },
 };
-
-// Note: we need the session to handle the method call
-pub type MethodSender = UnboundedSender<(Session, MethodCall)>;
-pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
-
-pub type MethodSenders = HashMap<&'static str, MethodSender>;
-pub type MethodReceivers = HashMap<&'static str, MethodReceiver>;
-
-// TODO: now we don't support extrinsic
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-pub fn handle_author_unwatchExtrinsic(
-    sessions: &mut WatchExtrinsicSessions,
-    session: Session,
-    request: MethodCall,
-) -> Result<Success, Error> {
-    handle_unsubscribe(sessions, session, request)
-}
 
 #[allow(non_snake_case)]
 pub fn handle_state_unsubscribeStorage(
@@ -51,7 +32,7 @@ pub fn handle_state_unsubscribeRuntimeVersion(
 
 #[allow(non_snake_case)]
 pub fn handle_grandpa_unsubscribeJustifications(
-    sessions: &mut RuntimeVersionSessions,
+    sessions: &mut GrandpaJustificationSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
@@ -60,7 +41,7 @@ pub fn handle_grandpa_unsubscribeJustifications(
 
 #[allow(non_snake_case)]
 pub fn handle_chain_unsubscribeAllHeads(
-    sessions: &mut RuntimeVersionSessions,
+    sessions: &mut AllHeadSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
@@ -83,6 +64,18 @@ pub fn handle_chain_unsubscribeFinalizedHeads(
     request: MethodCall,
 ) -> Result<Success, Error> {
     handle_unsubscribe(sessions, session, request)
+}
+
+#[allow(non_snake_case)]
+#[inline]
+pub fn handle_unsubscribe<T>(
+    sessions: &mut Sessions<T>,
+    _session: Session,
+    request: MethodCall,
+) -> Result<Success, Error> {
+    let params = request.params.unwrap_or_default().parse::<(String,)>()?;
+    let subscribed = sessions.remove(&params.0.into()).is_some();
+    Ok(Success::new(Value::Bool(subscribed), request.id))
 }
 
 #[allow(non_snake_case)]
@@ -135,25 +128,13 @@ pub fn handle_grandpa_subscribeJustifications(
     _handle_no_param_method_call(sessions, session, request)
 }
 
-/// Check for no params, returns Err if any params
-pub fn expect_no_params(params: &Option<Params>) -> Result<(), Error> {
-    match params {
-        None => Ok(()),
-        Some(Params::Array(ref v)) if v.is_empty() => Ok(()),
-        Some(p) => Err(Error::invalid_params_with_details(
-            "No parameters were expected",
-            p,
-        )),
-    }
-}
-
 #[allow(non_snake_case)]
 pub fn handle_chain_subscribeAllHeads(
     sessions: &mut AllHeadSessions,
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    _handle_chain_subscribeHeads(sessions, session, request)
+    _handle_no_param_method_call(sessions, session, request)
 }
 
 #[allow(non_snake_case)]
@@ -162,7 +143,7 @@ pub fn handle_chain_subscribeNewHeads(
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    _handle_chain_subscribeHeads(sessions, session, request)
+    _handle_no_param_method_call(sessions, session, request)
 }
 
 #[allow(non_snake_case)]
@@ -171,19 +152,7 @@ pub fn handle_chain_subscribeFinalizedHeads(
     session: Session,
     request: MethodCall,
 ) -> Result<Success, Error> {
-    _handle_chain_subscribeHeads(sessions, session, request)
-}
-
-#[allow(non_snake_case)]
-#[inline]
-pub fn handle_unsubscribe<T>(
-    sessions: &mut Sessions<T>,
-    _session: Session,
-    request: MethodCall,
-) -> Result<Success, Error> {
-    let params = request.params.unwrap_or_default().parse::<(String,)>()?;
-    let subscribed = sessions.remove(&params.0.into()).is_some();
-    Ok(Success::new(Value::Bool(subscribed), request.id))
+    _handle_no_param_method_call(sessions, session, request)
 }
 
 #[allow(non_snake_case)]
@@ -197,17 +166,20 @@ fn _handle_no_param_method_call(
 
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), session);
+    // subscription id as result
     Ok(Success::new(id.into(), request.id))
 }
 
-#[allow(non_snake_case)]
-#[inline]
-fn _handle_chain_subscribeHeads(
-    sessions: &mut NoParamSessions,
-    session: Session,
-    request: MethodCall,
-) -> Result<Success, Error> {
-    _handle_no_param_method_call(sessions, session, request)
+/// Check for no params, returns Err if any params
+fn expect_no_params(params: &Option<Params>) -> Result<(), Error> {
+    match params {
+        None => Ok(()),
+        Some(Params::Array(ref v)) if v.is_empty() => Ok(()),
+        Some(p) => Err(Error::invalid_params_with_details(
+            "No parameters were expected",
+            p,
+        )),
+    }
 }
 
 #[cfg(test)]

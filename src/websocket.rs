@@ -28,6 +28,7 @@ use tokio_tungstenite::{
 use crate::{
     cmd::ServiceConfig,
     message::{ElaraRequest, ElaraResponse, Error, Failure, MethodCall},
+    rpc_client::RpcClients,
     session::Session,
     substrate, Chain,
 };
@@ -45,7 +46,11 @@ impl WsServer {
     }
 
     /// returns a WebSocketStream and corresponding connection as a state
-    pub async fn accept(&self, cfg: ServiceConfig) -> tungstenite::Result<WsConnection> {
+    pub async fn accept(
+        &self,
+        clients: RpcClients,
+        cfg: ServiceConfig,
+    ) -> tungstenite::Result<WsConnection> {
         let (stream, addr) = self.listener.accept().await?;
         let stream = accept_async(stream).await?;
         let (sender, receiver) = stream.split();
@@ -56,6 +61,7 @@ impl WsServer {
             sender: Arc::new(Mutex::new(sender)),
             receiver: Arc::new(Mutex::new(receiver)),
             chain_handlers: Default::default(),
+            clients,
             sessions: Default::default(),
         })
     }
@@ -82,6 +88,7 @@ pub struct WsConnection {
     sender: Arc<Mutex<WsSender>>,
     receiver: Arc<Mutex<WsReceiver>>,
     chain_handlers: Arc<RwLock<HashMap<Chain, Box<dyn MessageHandler>>>>,
+    pub clients: RpcClients,
     pub sessions: ConnectionSessions,
 }
 
@@ -99,6 +106,7 @@ impl fmt::Display for WsConnection {
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionSessions {
     pub polkadot_sessions: substrate::session::SubscriptionSessions,
+    pub kusama_sessions: substrate::session::SubscriptionSessions,
 }
 
 impl WsConnection {
@@ -141,6 +149,10 @@ impl WsConnection {
 
     pub async fn send_message(&self, msg: Message) -> tungstenite::Result<()> {
         self.sender.lock().await.send(msg).await
+    }
+
+    pub async fn send_text(&self, text: String) -> tungstenite::Result<()> {
+        self.send_message(Message::Text(text)).await
     }
 
     pub async fn send_messages(&self, msgs: Vec<Message>) -> tungstenite::Result<()> {
