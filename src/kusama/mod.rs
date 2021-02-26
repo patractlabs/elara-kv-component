@@ -6,8 +6,6 @@ use crate::session::Session;
 use crate::substrate::MethodSenders;
 use crate::websocket::{MessageHandler, WsConnection, WsConnections};
 
-pub const NODE_NAME: &str = "kusama";
-
 pub struct RequestHandler {
     senders: MethodSenders,
 }

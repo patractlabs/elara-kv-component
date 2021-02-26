@@ -1,14 +1,16 @@
-use crate::message::Id;
+use std::{collections::HashMap, sync::Arc};
+
 use async_jsonrpc_client::{
     Output, Params, PubsubTransport, SubscriptionNotification, Transport, WsClient, WsClientError,
     WsSubscription,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::substrate::constants::{state_getRuntimeVersion, system_health};
-use crate::Chain;
+use crate::{
+    message::Id,
+    substrate::constants::{state_getRuntimeVersion, system_health},
+    Chain,
+};
 
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
 pub type NotificationStream = WsSubscription<SubscriptionNotification>;

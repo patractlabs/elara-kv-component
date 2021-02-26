@@ -25,10 +25,10 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
-use crate::rpc_client::RpcClients;
 use crate::{
     cmd::ServiceConfig,
     message::{ElaraRequest, ElaraResponse, Error, Failure, MethodCall},
+    rpc_client::RpcClients,
     session::Session,
     substrate, Chain,
 };

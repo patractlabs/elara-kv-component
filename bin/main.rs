@@ -1,19 +1,17 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use futures::StreamExt;
-use tokio::time::Duration;
+use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::{Error, Message};
 
-use elara_kv_component::rpc_client::{ArcRpcClient, RpcClients};
 use elara_kv_component::{
     cmd::*,
     kusama, polkadot,
-    rpc_client::{self, RpcClient},
+    rpc_client::{self, ArcRpcClient, RpcClient, RpcClients},
     websocket::{WsConnection, WsConnections, WsServer},
     Chain,
 };
-use tokio::sync::RwLock;
 
 const CONN_EXPIRED_TIME_SECS: u64 = 10;
 const CHECK_CONN_ALIVE_SECS: u64 = 10;

@@ -1,13 +1,14 @@
-use crate::message::MethodCall;
-use crate::session::Session;
-use std::collections::HashMap;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-
 pub(crate) mod dispatch;
 pub(crate) mod handles;
 pub(crate) mod rpc;
 pub(crate) mod service;
 pub(crate) mod session;
+
+use std::collections::HashMap;
+
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
+use crate::{message::MethodCall, session::Session};
 
 // Note: we need the session to handle the method call
 pub type MethodSender = UnboundedSender<(Session, MethodCall)>;

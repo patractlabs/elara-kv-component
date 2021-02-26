@@ -1,13 +1,14 @@
 mod impls;
 pub use self::impls::*;
 
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
 use async_jsonrpc_client::WsClientError;
 
-use crate::rpc_client::NotificationStream;
-use crate::{rpc_client::RpcClient, websocket::WsConnections};
-use std::collections::HashMap;
+use crate::{
+    rpc_client::{NotificationStream, RpcClient},
+    websocket::WsConnections,
+};
 
 pub trait SubscriptionDispatcher: Send + Debug {
     fn method(&self) -> &'static str;

@@ -1,37 +1,31 @@
 //! Polkadot related code
 
-mod subscrpition;
-pub use subscrpition::register_subscriptions;
+mod subscription;
+pub use self::subscription::register_subscriptions;
 
-use crate::message::{
-    serialize_failure_response, serialize_subscribed_message, serialize_success_response,
-    ElaraResponse, Error, Failure, Id, MethodCall, SubscriptionNotification,
-    SubscriptionNotificationParams, Success,
-};
-use crate::rpc_client::ArcRpcClient;
-use crate::session::{ISession, ISessions, Session};
-use crate::substrate::handles::{
-    handle_chain_subscribeAllHeads, handle_chain_subscribeFinalizedHeads,
-    handle_chain_subscribeNewHeads, handle_chain_unsubscribeAllHeads,
-    handle_chain_unsubscribeFinalizedHeads, handle_chain_unsubscribeNewHeads,
-    handle_grandpa_subscribeJustifications, handle_grandpa_unsubscribeJustifications,
-    handle_state_subscribeRuntimeVersion, handle_state_subscribeStorage,
-    handle_state_unsubscribeRuntimeVersion, handle_state_unsubscribeStorage,
-};
-use crate::substrate::rpc::state::{RuntimeVersion, StateStorage};
-use crate::substrate::session::{RuntimeVersionSessions, StorageSessions, SubscriptionSessions};
-use crate::substrate::{constants, MethodReceiver, MethodReceivers, MethodSenders};
-use crate::websocket::{MessageHandler, WsConnection};
+use std::{borrow::BorrowMut, collections::HashMap, fmt::Debug, sync::Arc};
+
 use async_jsonrpc_client::Output;
-use std::borrow::BorrowMut;
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::sync::Arc;
-use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 
-pub const NODE_NAME: &str = "polkadot";
+use crate::{
+    message::{
+        serialize_failure_response, serialize_subscribed_message, serialize_success_response,
+        ElaraResponse, Error, Failure, Id, MethodCall, SubscriptionNotification,
+        SubscriptionNotificationParams, Success,
+    },
+    rpc_client::ArcRpcClient,
+    session::{ISession, ISessions, Session},
+    substrate::{
+        constants,
+        handles::*,
+        rpc::state::{RuntimeVersion, StateStorage},
+        session::{RuntimeVersionSessions, StorageSessions, SubscriptionSessions},
+        MethodReceiver, MethodReceivers, MethodSenders,
+    },
+    websocket::{MessageHandler, WsConnection},
+};
 
 pub struct RequestHandler {
     senders: MethodSenders,
@@ -89,7 +83,7 @@ pub fn method_channel() -> (MethodSenders, MethodReceivers) {
     ];
 
     for method in methods {
-        let (sender, receiver) = unbounded_channel::<(Session, MethodCall)>();
+        let (sender, receiver) = mpsc::unbounded_channel::<(Session, MethodCall)>();
         senders.insert(method, sender);
         receivers.insert(method, receiver);
     }
@@ -307,7 +301,7 @@ pub fn handle_subscription_response(
     sessions: SubscriptionSessions,
     receivers: MethodReceivers,
 ) {
-    for (method, receiver) in receivers.into_iter() {
+    for (method, receiver) in receivers {
         match method {
             constants::state_subscribeStorage => {
                 tokio::spawn(start_state_storage_handle(

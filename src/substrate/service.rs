@@ -10,7 +10,6 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::{
     message::{
         serialize_subscribed_message, Id, SubscriptionNotification, SubscriptionNotificationParams,
-        Version,
     },
     session::{ISession, ISessions, Sessions},
     substrate::{
@@ -33,169 +32,105 @@ use crate::{
 /// According to some states or sessions, we transform some data from chain node to new suitable values.
 /// Mainly include some simple filtering operations.
 pub trait SubscriptionTransformer {
-    type Input: DeserializeOwned;
-    type Output: Serialize;
+    const METHOD: &'static str;
+    type Input: Serialize + DeserializeOwned;
     type Session;
 
-    const METHOD: &'static str;
-
-    fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output>;
-}
-
-pub struct StateStorageTransformer;
-
-impl SubscriptionTransformer for StateStorageTransformer {
-    type Input = StateStorage;
-    type Output = SubscriptionNotification<StateStorage>;
-    type Session = StorageSession;
-    const METHOD: &'static str = constants::state_storage;
-
-    fn transform(session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
-        let (_, keys) = session;
-        match keys {
-            StorageKeys::All => {
-                Some(Self::Output {
-                    jsonrpc: Version::V2_0,
-                    method: Self::METHOD.to_string(),
-                    params: SubscriptionNotificationParams {
-                        result: input,
-                        // we maintains the subscription id
-                        subscription: id,
-                    },
-                })
-            }
-
-            StorageKeys::Some(ref keys) => {
-                let filtered_data: Vec<(String, Option<String>)> = input
-                    .changes
-                    .clone()
-                    .into_iter()
-                    .filter(|(key, _)| keys.contains(key))
-                    .collect();
-
-                if filtered_data.is_empty() {
-                    None
-                } else {
-                    Some(Self::Output {
-                        jsonrpc: Version::V2_0,
-                        method: constants::state_storage.to_string(),
-                        params: SubscriptionNotificationParams {
-                            result: StateStorage {
-                                block: input.block,
-                                changes: filtered_data,
-                            },
-                            // we maintains the subscription id
-                            subscription: id,
-                        },
-                    })
-                }
-            }
-        }
-    }
-}
-
-pub struct StateRuntimeVersionTransformer;
-
-impl SubscriptionTransformer for StateRuntimeVersionTransformer {
-    type Input = RuntimeVersion;
-    type Output = SubscriptionNotification<RuntimeVersion>;
-    type Session = RuntimeVersionSession;
-    const METHOD: &'static str = constants::state_runtimeVersion;
-
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
-        Some(Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
-                result: input,
-                // we maintains the subscription id
+    fn transform(
+        _session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<SubscriptionNotification<Self::Input>> {
+        Some(SubscriptionNotification::new(
+            Self::METHOD,
+            SubscriptionNotificationParams {
                 subscription: id,
-            },
-        })
-    }
-}
-
-pub struct GrandpaJustificationTransformer;
-
-impl SubscriptionTransformer for GrandpaJustificationTransformer {
-    type Input = GrandpaJustification;
-    type Output = SubscriptionNotification<GrandpaJustification>;
-    type Session = GrandpaJustificationSession;
-    const METHOD: &'static str = constants::grandpa_justifications;
-
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
-        Some(Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
                 result: input,
-                // we maintains the subscription id
-                subscription: id,
             },
-        })
+        ))
     }
 }
 
 pub struct ChainAllHeadTransformer;
-
 impl SubscriptionTransformer for ChainAllHeadTransformer {
-    type Input = ChainHead;
-    type Output = SubscriptionNotification<ChainHead>;
-    type Session = AllHeadSession;
     const METHOD: &'static str = constants::chain_allHead;
-
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
-        Some(Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
-                result: input,
-                // we maintains the subscription id
-                subscription: id,
-            },
-        })
-    }
+    type Input = ChainHead;
+    type Session = AllHeadSession;
 }
 
 pub struct ChainNewHeadTransformer;
-
 impl SubscriptionTransformer for ChainNewHeadTransformer {
-    type Input = ChainHead;
-    type Output = SubscriptionNotification<ChainHead>;
-    type Session = NewHeadSession;
     const METHOD: &'static str = constants::chain_newHead;
-
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
-        Some(Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
-                result: input,
-                // we maintains the subscription id
-                subscription: id,
-            },
-        })
-    }
+    type Input = ChainHead;
+    type Session = NewHeadSession;
 }
 
 pub struct ChainFinalizedHeadTransformer;
-
 impl SubscriptionTransformer for ChainFinalizedHeadTransformer {
-    type Input = ChainHead;
-    type Output = SubscriptionNotification<ChainHead>;
-    type Session = FinalizedHeadSession;
     const METHOD: &'static str = constants::chain_finalizedHead;
+    type Input = ChainHead;
+    type Session = FinalizedHeadSession;
+}
 
-    fn transform(_session: &Self::Session, id: Id, input: Self::Input) -> Option<Self::Output> {
-        Some(Self::Output {
-            jsonrpc: Version::V2_0,
-            method: Self::METHOD.to_string(),
-            params: SubscriptionNotificationParams {
-                result: input,
-                // we maintains the subscription id
-                subscription: id,
-            },
-        })
+pub struct StateRuntimeVersionTransformer;
+impl SubscriptionTransformer for StateRuntimeVersionTransformer {
+    const METHOD: &'static str = constants::state_runtimeVersion;
+    type Input = RuntimeVersion;
+    type Session = RuntimeVersionSession;
+}
+
+pub struct GrandpaJustificationTransformer;
+impl SubscriptionTransformer for GrandpaJustificationTransformer {
+    const METHOD: &'static str = constants::grandpa_justifications;
+    type Input = GrandpaJustification;
+    type Session = GrandpaJustificationSession;
+}
+
+pub struct StateStorageTransformer;
+impl SubscriptionTransformer for StateStorageTransformer {
+    const METHOD: &'static str = constants::state_storage;
+    type Input = StateStorage;
+    type Session = StorageSession;
+
+    fn transform(
+        session: &Self::Session,
+        id: Id,
+        input: Self::Input,
+    ) -> Option<SubscriptionNotification<Self::Input>> {
+        let (_, keys) = session;
+        match keys {
+            StorageKeys::All => Some(SubscriptionNotification::new(
+                Self::METHOD,
+                SubscriptionNotificationParams {
+                    result: input,
+                    subscription: id,
+                },
+            )),
+
+            StorageKeys::Some(ref keys) => {
+                let filtered_data = input
+                    .changes
+                    .clone()
+                    .into_iter()
+                    .filter(|(key, _)| keys.contains(key))
+                    .collect::<Vec<(String, Option<String>)>>();
+
+                if filtered_data.is_empty() {
+                    None
+                } else {
+                    Some(SubscriptionNotification::new(
+                        Self::METHOD,
+                        SubscriptionNotificationParams {
+                            result: StateStorage {
+                                block: input.block,
+                                changes: filtered_data,
+                            },
+                            subscription: id,
+                        },
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -208,27 +143,23 @@ pub async fn send_subscription_data<ST, Session, Input>(
     data: Input,
 ) where
     Session: 'static + ISession,
-    Input: 'static + Clone + Send,
+    Input: 'static + Serialize + Clone + Send,
     ST: SubscriptionTransformer<Session = Session, Input = Input>,
 {
     for (subscription_id, session) in sessions.read().await.iter() {
-        let data = ST::transform(session, subscription_id.clone(), data.clone());
-        match data {
-            None => {}
-            Some(data) => {
-                // two level json
-                let msg = serialize_subscribed_message(session, &data);
-                let res = conn.send_message(Message::Text(msg)).await;
-                // we need to cleanup unlived conn outside
-                if let Err(err) = res {
-                    log::warn!(
-                        "Error occurred when send {} data to peer `{}`: {:?}",
-                        ST::METHOD,
-                        conn.addr(),
-                        err
-                    );
-                    return;
-                }
+        if let Some(data) = ST::transform(session, subscription_id.clone(), data.clone()) {
+            // two level json
+            let msg = serialize_subscribed_message(session, &data);
+            let res = conn.send_message(Message::Text(msg)).await;
+            // we need to cleanup unlived conn outside
+            if let Err(err) = res {
+                log::warn!(
+                    "Error occurred when send {} data to peer `{}`: {:?}",
+                    ST::METHOD,
+                    conn.addr(),
+                    err
+                );
+                return;
             }
         }
     }
