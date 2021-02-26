@@ -150,7 +150,6 @@ pub async fn start_state_runtime_version_handle(
                 let subscription_id: Id =
                     serde_json::from_value(success.result).expect("never panic");
 
-                // TODO: make sure the order
                 send_latest_runtime_version(conn.clone(), &session, client, subscription_id).await;
             }
         }
@@ -176,7 +175,7 @@ async fn send_latest_runtime_version(
                     return;
                 }
             };
-            let result = serde_json::to_value(runtime_version).expect("never panic");
+            let result = serde_json::to_value(runtime_version).expect("serialize runtime_version");
             let data = SubscriptionNotification::new(
                 constants::state_runtimeVersion,
                 SubscriptionNotificationParams::new(subscription_id, result),
@@ -219,7 +218,7 @@ pub async fn start_state_storage_handle(
 
                 // we need get the latest storage for these keys
                 let clients = conn.clients.clone();
-                let client = clients.get(&session.chain()).expect("never panic");
+                let client = clients.get(&session.chain()).expect("get chain");
                 let stream = {
                     let client = client.read().await;
                     log::debug!("start_subscribe {:?}", request.params);
@@ -239,13 +238,12 @@ pub async fn start_state_storage_handle(
 
                     Ok(mut stream) => {
                         // we only get the first item for initial changes
-                        let latest = stream.next().await.expect("never panic");
+                        let latest = stream.next().await.expect("get first stream item");
                         log::debug!("{:?}", latest);
                         let result: Result<StateStorage, _> =
                             serde_json::value::from_value(latest.params.result.clone());
 
                         // when get the first item, we unsubscribe this.
-                        // TODO: need to handle error ?
                         let client = client.clone();
                         tokio::spawn(async move {
                             let client = client.read().await;
@@ -274,8 +272,8 @@ pub async fn start_state_storage_handle(
 
                         match result {
                             Ok(result) => {
-                                let subscription_id: Id =
-                                    serde_json::from_value(success.result).expect("never panic");
+                                let subscription_id: Id = serde_json::from_value(success.result)
+                                    .expect("get subscription_id");
 
                                 let result = serde_json::to_value(result).expect("never panic");
                                 let latest_changes = SubscriptionNotification::new(
@@ -301,6 +299,8 @@ pub async fn start_state_storage_handle(
     }
 }
 
+
+// TODO: impl a registry for the following pattern
 /// Start to spawn handler task about subscription jsonrpc in background to response for every subscription.
 /// It maintains the sessions for this connection.
 pub fn handle_subscription_response(

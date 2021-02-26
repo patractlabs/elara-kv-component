@@ -116,7 +116,6 @@ async fn health_check(connections: WsConnections, client: ArcRpcClient) {
                         Chain::Polkadot => {
                             polkadot::register_subscriptions(&*client, connections.clone()).await
                         }
-                        // TODO: fix it
                         Chain::Kusama => {
                             kusama::register_subscriptions(&*client, connections.clone()).await
                         }
@@ -145,10 +144,9 @@ async fn subscribe_polkadot(connections: WsConnections, client: &RpcClient) {
 
 async fn subscribe_kusama(connections: WsConnections, client: &RpcClient) {
     log::info!("Start to subscribe kusama from `{}`", client.addr());
-    // TODO: fix it
     kusama::register_subscriptions(client, connections)
         .await
-        .expect("Cannot subscribe polkadot node");
+        .expect("Cannot subscribe kusama node");
 }
 
 async fn register_handlers(mut conn: WsConnection) {
@@ -180,7 +178,6 @@ async fn handle_connection(connection: WsConnection) {
                     }
 
                     Message::Ping(_) => {
-                        // TODO: need we to handle this?
                         let _res = connection
                             .send_message(Message::Pong(b"pong".to_vec()))
                             .await;
