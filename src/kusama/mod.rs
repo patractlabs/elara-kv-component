@@ -3,6 +3,7 @@ use crate::polkadot;
 use crate::polkadot::{handle_subscription_response, method_channel};
 use crate::rpc_client::RpcClient;
 use crate::session::Session;
+use crate::substrate::Method;
 use crate::substrate::MethodSenders;
 use crate::websocket::{MessageHandler, WsConnection, WsConnections};
 
@@ -21,9 +22,10 @@ impl RequestHandler {
 
 impl MessageHandler for RequestHandler {
     fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse> {
+        let method = Method::from(&request.method);
         let sender = self
             .senders
-            .get(request.method.as_str())
+            .get(&method)
             .ok_or_else(|| Failure::new(Error::method_not_found(), Some(request.id.clone())))
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
             .map_err(|res| ElaraResponse::success(session.client_id.clone(), session.chain, res))?;
