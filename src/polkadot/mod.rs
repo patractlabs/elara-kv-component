@@ -246,7 +246,7 @@ pub async fn start_state_storage_handle(
                                 .await;
 
                             match res {
-                                Ok(_cancel) => {
+                                Ok(false) => {
                                     log::warn!(
                                         "cannot cancel subscription `{}`, id: {}",
                                         constants::state_unsubscribeStorage,
@@ -261,6 +261,7 @@ pub async fn start_state_storage_handle(
                                         err
                                     )
                                 }
+                                _ => {}
                             };
                         });
 
