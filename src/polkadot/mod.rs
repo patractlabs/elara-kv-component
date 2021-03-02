@@ -9,6 +9,7 @@ use async_jsonrpc_client::Output;
 use tokio::sync::{mpsc, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::substrate::Method;
 use crate::{
     message::{
         serialize_failure_response, serialize_subscribed_message, serialize_success_response,
@@ -42,9 +43,10 @@ impl RequestHandler {
 
 impl MessageHandler for RequestHandler {
     fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse> {
+        let method = Method::from(&request.method);
         let sender = self
             .senders
-            .get(request.method.as_str())
+            .get(&method)
             .ok_or_else(|| Failure::new(Error::method_not_found(), Some(request.id.clone())))
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
             .map_err(|res| ElaraResponse::success(session.client_id.clone(), session.chain, res))?;
@@ -65,21 +67,18 @@ pub fn method_channel() -> (MethodSenders, MethodReceivers) {
     let mut senders = HashMap::new();
 
     let methods = vec![
-        constants::grandpa_subscribeJustifications,
-        constants::grandpa_unsubscribeJustifications,
-        constants::state_subscribeStorage,
-        constants::state_unsubscribeStorage,
-        constants::state_subscribeRuntimeVersion,
-        constants::state_unsubscribeRuntimeVersion,
-        constants::chain_subscribeAllHeads,
-        constants::chain_unsubscribeAllHeads,
-        constants::chain_subscribeNewHeads,
-        constants::chain_unsubscribeNewHeads,
-        constants::chain_subscribeFinalizedHeads,
-        constants::chain_unsubscribeFinalizedHeads,
-        // TODO: now don't support these api
-        // constants::author_submitAndWatchExtrinsic,
-        // constants::author_unwatchExtrinsic,
+        Method::SubscribeStorage,
+        Method::UnsubscribeStorage,
+        Method::SubscribeRuntimeVersion,
+        Method::UnsubscribeRuntimeVersion,
+        Method::SubscribeJustifications,
+        Method::UnsubscribeJustifications,
+        Method::SubscribeAllHeads,
+        Method::UnsubscribeAllHeads,
+        Method::SubscribeNewHeads,
+        Method::UnsubscribeNewHeads,
+        Method::SubscribeFinalizedHeads,
+        Method::UnsubscribeFinalizedHeads,
     ];
 
     for method in methods {
@@ -304,14 +303,14 @@ pub fn handle_subscription_response(
 ) {
     for (method, receiver) in receivers {
         match method {
-            constants::state_subscribeStorage => {
+            Method::SubscribeStorage => {
                 tokio::spawn(start_state_storage_handle(
                     sessions.storage_sessions.clone(),
                     conn.clone(),
                     receiver,
                 ));
             }
-            constants::state_unsubscribeStorage => {
+            Method::UnsubscribeStorage => {
                 tokio::spawn(start_handle(
                     sessions.storage_sessions.clone(),
                     conn.clone(),
@@ -319,15 +318,14 @@ pub fn handle_subscription_response(
                     handle_state_unsubscribeStorage,
                 ));
             }
-
-            constants::state_subscribeRuntimeVersion => {
+            Method::SubscribeRuntimeVersion => {
                 tokio::spawn(start_state_runtime_version_handle(
                     sessions.runtime_version_sessions.clone(),
                     conn.clone(),
                     receiver,
                 ));
             }
-            constants::state_unsubscribeRuntimeVersion => {
+            Method::UnsubscribeRuntimeVersion => {
                 tokio::spawn(start_handle(
                     sessions.runtime_version_sessions.clone(),
                     conn.clone(),
@@ -336,7 +334,7 @@ pub fn handle_subscription_response(
                 ));
             }
 
-            constants::grandpa_subscribeJustifications => {
+            Method::SubscribeJustifications => {
                 tokio::spawn(start_handle(
                     sessions.grandpa_justifications.clone(),
                     conn.clone(),
@@ -344,7 +342,7 @@ pub fn handle_subscription_response(
                     handle_grandpa_subscribeJustifications,
                 ));
             }
-            constants::grandpa_unsubscribeJustifications => {
+            Method::UnsubscribeJustifications => {
                 tokio::spawn(start_handle(
                     sessions.grandpa_justifications.clone(),
                     conn.clone(),
@@ -353,7 +351,7 @@ pub fn handle_subscription_response(
                 ));
             }
 
-            constants::chain_subscribeNewHeads => {
+            Method::SubscribeNewHeads => {
                 tokio::spawn(start_handle(
                     sessions.new_head_sessions.clone(),
                     conn.clone(),
@@ -361,7 +359,7 @@ pub fn handle_subscription_response(
                     handle_chain_subscribeNewHeads,
                 ));
             }
-            constants::chain_unsubscribeNewHeads => {
+            Method::UnsubscribeNewHeads => {
                 tokio::spawn(start_handle(
                     sessions.new_head_sessions.clone(),
                     conn.clone(),
@@ -370,7 +368,7 @@ pub fn handle_subscription_response(
                 ));
             }
 
-            constants::chain_subscribeAllHeads => {
+            Method::SubscribeAllHeads => {
                 tokio::spawn(start_handle(
                     sessions.all_head_sessions.clone(),
                     conn.clone(),
@@ -378,7 +376,7 @@ pub fn handle_subscription_response(
                     handle_chain_subscribeAllHeads,
                 ));
             }
-            constants::chain_unsubscribeAllHeads => {
+            Method::UnsubscribeAllHeads => {
                 tokio::spawn(start_handle(
                     sessions.all_head_sessions.clone(),
                     conn.clone(),
@@ -387,7 +385,7 @@ pub fn handle_subscription_response(
                 ));
             }
 
-            constants::chain_subscribeFinalizedHeads => {
+            Method::SubscribeFinalizedHeads => {
                 tokio::spawn(start_handle(
                     sessions.finalized_head_sessions.clone(),
                     conn.clone(),
@@ -395,7 +393,7 @@ pub fn handle_subscription_response(
                     handle_chain_subscribeFinalizedHeads,
                 ));
             }
-            constants::chain_unsubscribeFinalizedHeads => {
+            Method::UnsubscribeFinalizedHeads => {
                 tokio::spawn(start_handle(
                     sessions.finalized_head_sessions.clone(),
                     conn.clone(),
