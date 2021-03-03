@@ -34,12 +34,14 @@ impl RpcClient {
         Ok(Self { chain, ws, addr })
     }
 
+    #[inline]
     pub fn addr(&self) -> String {
         self.addr.clone()
     }
 
+    #[inline]
     pub fn chain(&self) -> Chain {
-        self.chain
+        self.chain.clone()
     }
 
     #[inline]
@@ -51,6 +53,7 @@ impl RpcClient {
         self.ws.request(state_getRuntimeVersion, None).await
     }
 
+    #[inline]
     pub async fn is_alive(&self) -> bool {
         self.system_health().await.is_ok()
     }

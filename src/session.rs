@@ -25,7 +25,7 @@ pub struct Session {
 
 impl ISession for Session {
     fn chain(&self) -> Chain {
-        self.chain
+        self.chain.clone()
     }
 
     fn client_id(&self) -> String {
@@ -36,7 +36,7 @@ impl ISession for Session {
 impl From<&ElaraRequest> for Session {
     fn from(msg: &ElaraRequest) -> Self {
         Self {
-            chain: msg.chain,
+            chain: msg.chain.clone(),
             client_id: msg.id.clone(),
         }
     }

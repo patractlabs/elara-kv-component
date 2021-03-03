@@ -25,6 +25,7 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
+use crate::substrate::session::SubscriptionSessions;
 use crate::{
     cmd::ServiceConfig,
     message::{ElaraRequest, ElaraResponse, Error, Failure, MethodCall},
@@ -62,7 +63,8 @@ impl WsServer {
             receiver: Arc::new(Mutex::new(receiver)),
             chain_handlers: Default::default(),
             clients,
-            sessions: Default::default(),
+            // sessions: Default::default(),
+            chains: Default::default(),
         })
     }
 }
@@ -72,6 +74,11 @@ pub type WsReceiver = SplitStream<WebSocketStream<TcpStream>>;
 
 /// Handle specified chain's subscription request
 pub trait MessageHandler: Send + Sync {
+    fn chain(&self) -> Chain;
+
+    // start response task in background. Can be called only once.
+    fn handle_response(&mut self, conn: WsConnection, sessions: SubscriptionSessions);
+
     // TODO: refine the result type for better error handle
 
     /// When the result is Ok, it means to send it to corresponding subscription channel to handle it.
@@ -89,7 +96,8 @@ pub struct WsConnection {
     receiver: Arc<Mutex<WsReceiver>>,
     chain_handlers: Arc<RwLock<HashMap<Chain, Box<dyn MessageHandler>>>>,
     pub clients: RpcClients,
-    pub sessions: ConnectionSessions,
+    // pub sessions: ConnectionSessions,
+    pub chains: Arc<RwLock<HashMap<Chain, substrate::session::SubscriptionSessions>>>,
 }
 
 impl fmt::Display for WsConnection {
@@ -163,16 +171,29 @@ impl WsConnection {
         sender.flush().await
     }
 
+    pub fn config(&self) -> &ServiceConfig {
+        &self.config
+    }
+
     pub async fn register_message_handler(
         &mut self,
         chain_name: Chain,
-        handler: impl MessageHandler + 'static,
-    ) -> &mut Self {
+        mut handler: impl MessageHandler + 'static,
+    ) {
+        let mut chains = self.chains.write().await;
+
+        let sessions = SubscriptionSessions::default();
+        chains.insert(chain_name.clone(), sessions.clone());
+        handler.handle_response(self.clone(), sessions);
         self.chain_handlers
             .write()
             .await
-            .insert(chain_name, Box::new(handler));
-        self
+            .insert(chain_name.clone(), Box::new(handler));
+    }
+
+    pub async fn get_sessions(&self, chain: &Chain) -> Option<SubscriptionSessions> {
+        let chains = self.chains.read().await;
+        chains.get(chain).map(|s| s.clone())
     }
 
     /// Send successful response in other channel handler.
@@ -204,8 +225,8 @@ impl WsConnection {
         if !self.config.validate(&msg.chain) {
             return Err(ElaraResponse::failure(
                 Some(msg.id.clone()),
-                Some(msg.chain),
-                Error::parse_error(),
+                Some(msg.chain.clone()),
+                Error::invalid_params(format!("Chain `{}` is not supported", &msg.chain)),
             ));
         }
 
@@ -213,7 +234,7 @@ impl WsConnection {
         let request = serde_json::from_str::<MethodCall>(&msg.request)
             .map_err(|_| Failure::new(Error::parse_error(), None))
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
-            .map_err(|res| ElaraResponse::success(msg.id.clone(), msg.chain, res))?;
+            .map_err(|res| ElaraResponse::success(msg.id.clone(), msg.chain.clone(), res))?;
 
         let chain_handlers = self.chain_handlers.read().await;
 

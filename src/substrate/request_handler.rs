@@ -1,8 +1,3 @@
-//! Polkadot related code
-
-mod subscription;
-pub use self::subscription::register_subscriptions;
-
 use std::{borrow::BorrowMut, collections::HashMap, fmt::Debug, sync::Arc};
 
 use async_jsonrpc_client::Output;
@@ -26,22 +21,37 @@ use crate::{
         MethodReceiver, MethodReceivers, MethodSenders,
     },
     websocket::{MessageHandler, WsConnection},
+    Chain,
 };
 
 pub struct RequestHandler {
     senders: MethodSenders,
+    receivers: Option<MethodReceivers>,
+    chain: Chain,
 }
 
 impl RequestHandler {
     /// make this ws connection subscribing a polkadot node jsonrpc subscription
-    pub fn new(conn: WsConnection) -> Self {
+    pub fn new(chain: &Chain) -> Self {
         let (senders, receivers) = method_channel();
-        handle_subscription_response(conn.clone(), conn.sessions.polkadot_sessions, receivers);
-        Self { senders }
+        Self {
+            senders,
+            receivers: Some(receivers),
+            chain: chain.clone(),
+        }
     }
 }
 
 impl MessageHandler for RequestHandler {
+    fn handle_response(&mut self, conn: WsConnection, sessions: SubscriptionSessions) {
+        let receivers = self.receivers.take().expect("Only can be called once");
+        handle_subscription_response(conn, sessions, receivers)
+    }
+
+    fn chain(&self) -> Chain {
+        self.chain.clone()
+    }
+
     fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse> {
         let method = Method::from(&request.method);
         let sender = self
@@ -49,7 +59,9 @@ impl MessageHandler for RequestHandler {
             .get(&method)
             .ok_or_else(|| Failure::new(Error::method_not_found(), Some(request.id.clone())))
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
-            .map_err(|res| ElaraResponse::success(session.client_id.clone(), session.chain, res))?;
+            .map_err(|res| {
+                ElaraResponse::success(session.client_id.clone(), session.chain.clone(), res)
+            })?;
 
         let method = request.method.clone();
         let res = sender.send((session, request));
@@ -62,7 +74,7 @@ impl MessageHandler for RequestHandler {
 
 type HandlerFn<S> = fn(&mut S, Session, MethodCall) -> Result<Success, Error>;
 
-pub fn method_channel() -> (MethodSenders, MethodReceivers) {
+fn method_channel() -> (MethodSenders, MethodReceivers) {
     let mut receivers = HashMap::new();
     let mut senders = HashMap::new();
 
