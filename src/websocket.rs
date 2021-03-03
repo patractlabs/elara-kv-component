@@ -63,7 +63,6 @@ impl WsServer {
             receiver: Arc::new(Mutex::new(receiver)),
             chain_handlers: Default::default(),
             clients,
-            // sessions: Default::default(),
             chains: Default::default(),
         })
     }
@@ -96,7 +95,6 @@ pub struct WsConnection {
     receiver: Arc<Mutex<WsReceiver>>,
     chain_handlers: Arc<RwLock<HashMap<Chain, Box<dyn MessageHandler>>>>,
     pub clients: RpcClients,
-    // pub sessions: ConnectionSessions,
     pub chains: Arc<RwLock<HashMap<Chain, substrate::session::SubscriptionSessions>>>,
 }
 

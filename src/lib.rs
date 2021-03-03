@@ -23,15 +23,3 @@ impl From<String> for Chain {
         Self(s)
     }
 }
-
-// impl std::str::FromStr for Chain {
-//     type Err = &'static str;
-//
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         match s {
-//             "polkadot" | "dot" => Ok(Self::Polkadot),
-//             "kusama" | "ksm" => Ok(Self::Kusama),
-//             _ => Err("unknown node"),
-//         }
-//     }
-// }
