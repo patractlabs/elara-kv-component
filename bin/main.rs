@@ -153,7 +153,7 @@ async fn subscribe_chain(connections: WsConnections, client: &RpcClient) {
     );
     register_subscriptions(client, connections)
         .await
-        .expect(&format!("Cannot subscribe chain `{}`", client.chain()));
+        .unwrap_or_else(|_| panic!("Cannot subscribe chain `{}`", client.chain()))
 }
 
 async fn register_handlers(mut conn: WsConnection) {

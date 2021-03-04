@@ -20,15 +20,14 @@ pub trait SubscriptionDispatcher: Send + Debug + 'static + Sync {
     async fn dispatch(&self, conns: WsConnections, stream: NotificationStream);
 }
 
+#[derive(Default)]
 pub struct DispatcherHandler {
     dispatchers: HashMap<&'static str, Arc<dyn SubscriptionDispatcher>>,
 }
 
 impl DispatcherHandler {
     pub fn new() -> Self {
-        Self {
-            dispatchers: Default::default(),
-        }
+        Default::default()
     }
 
     /// register a subscription dispatcher

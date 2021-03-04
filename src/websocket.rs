@@ -191,7 +191,7 @@ impl WsConnection {
 
     pub async fn get_sessions(&self, chain: &Chain) -> Option<SubscriptionSessions> {
         let chains = self.chains.read().await;
-        chains.get(chain).map(|s| s.clone())
+        chains.get(chain).cloned()
     }
 
     /// Send successful response in other channel handler.

@@ -23,3 +23,9 @@ impl From<String> for Chain {
         Self(s)
     }
 }
+
+impl From<&str> for Chain {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
