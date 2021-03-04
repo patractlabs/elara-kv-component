@@ -1,7 +1,5 @@
 pub mod cmd;
-pub mod kusama;
 pub mod message;
-pub mod polkadot;
 pub mod rpc_client;
 pub mod session;
 pub mod substrate;
@@ -9,36 +7,25 @@ pub mod websocket;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Chain {
-    Polkadot,
-    Kusama,
-}
-
-impl Default for Chain {
-    fn default() -> Self {
-        Self::Polkadot
-    }
-}
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct Chain(String);
 
 impl std::fmt::Display for Chain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Polkadot => f.write_str("polkadot"),
-            Self::Kusama => f.write_str("kusama"),
-        }
+        self.0.fmt(f)
     }
 }
 
-impl std::str::FromStr for Chain {
-    type Err = &'static str;
+impl From<String> for Chain {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "polkadot" | "dot" => Ok(Self::Polkadot),
-            "kusama" | "ksm" => Ok(Self::Kusama),
-            _ => Err("unknown node"),
-        }
+impl From<&str> for Chain {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
     }
 }

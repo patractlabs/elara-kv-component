@@ -196,7 +196,7 @@ mod tests {
 
         // subscribe
         let session = Session {
-            chain: Chain::Polkadot,
+            chain: Chain::from("polkadot"),
             client_id: "0x1".to_string(),
         };
 
@@ -216,7 +216,7 @@ mod tests {
 
         // unsubscribe
         let session = Session {
-            chain: Chain::Polkadot,
+            chain: Chain::from("polkadot"),
             client_id: "0x2".to_string(),
         };
         let request = MethodCall::new(

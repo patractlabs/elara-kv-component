@@ -191,6 +191,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-jsonrpc-client",
+ "async-trait",
  "env_logger",
  "futures",
  "jsonrpc-pubsub",

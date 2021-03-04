@@ -114,7 +114,7 @@ mod tests {
             ])),
             Id::Num(141)
         );
-        assert_eq!(request.chain, Chain::Polkadot);
+        assert_eq!(request.chain, Chain::from("polkadot"));
         let req = serde_json::from_str::<MethodCall>(&request.request).unwrap();
         assert_eq!(req, actual_request);
     }

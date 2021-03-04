@@ -4,49 +4,50 @@ pub use self::impls::*;
 use std::{collections::HashMap, fmt::Debug};
 
 use async_jsonrpc_client::WsClientError;
+use async_trait::async_trait;
 
 use crate::{
     rpc_client::{NotificationStream, RpcClient},
     websocket::WsConnections,
 };
+use std::sync::Arc;
 
-pub trait SubscriptionDispatcher: Send + Debug {
+#[async_trait]
+pub trait SubscriptionDispatcher: Send + Debug + 'static + Sync {
     fn method(&self) -> &'static str;
 
     // TODO: refine this
-    fn dispatch(&mut self, conns: WsConnections, stream: NotificationStream);
+    async fn dispatch(&self, conns: WsConnections, stream: NotificationStream);
 }
 
+#[derive(Default)]
 pub struct DispatcherHandler {
-    dispatchers: HashMap<&'static str, Box<dyn SubscriptionDispatcher>>,
+    dispatchers: HashMap<&'static str, Arc<dyn SubscriptionDispatcher>>,
 }
 
 impl DispatcherHandler {
     pub fn new() -> Self {
-        Self {
-            dispatchers: Default::default(),
-        }
+        Default::default()
     }
 
     /// register a subscription dispatcher
-    pub fn register_dispatcher(&mut self, handle: Box<dyn SubscriptionDispatcher>) {
+    pub fn register_dispatcher(&mut self, handle: impl SubscriptionDispatcher + 'static) {
         let method = handle.method();
-        if self.dispatchers.insert(method, handle).is_some() {
+        if self.dispatchers.insert(method, Arc::new(handle)).is_some() {
             panic!("`{}` dispatcher is duplicated", method);
         }
     }
 
     /// dispatch client's subscription data to every conns
     pub async fn start_dispatch(
-        &mut self,
+        self,
         client: &RpcClient,
         conns: WsConnections,
     ) -> Result<(), WsClientError> {
-        for (&method, dispatcher) in self.dispatchers.iter_mut() {
+        for (method, dispatcher) in self.dispatchers.into_iter() {
             let stream = client.subscribe(method, None).await?;
-            let _res = dispatcher.dispatch(conns.clone(), stream);
+            dispatcher.dispatch(conns.clone(), stream).await;
         }
-
         Ok(())
     }
 }

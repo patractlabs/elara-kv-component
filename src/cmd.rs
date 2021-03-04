@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 
@@ -28,10 +28,7 @@ impl CliOpts {
             nodes: HashMap::default(),
         };
         for (node_name, node_config) in config.nodes.into_iter() {
-            let node = node_name
-                .parse::<Chain>()
-                .map_err(|_| anyhow!("unknown node: {}", node_name))?;
-            result.nodes.insert(node, node_config);
+            result.nodes.insert(Chain::from(node_name), node_config);
         }
         Ok(result)
     }

@@ -1,10 +1,11 @@
 #![allow(non_upper_case_globals)]
 
-pub(crate) mod dispatch;
-pub(crate) mod handles;
-pub(crate) mod rpc;
-pub(crate) mod service;
-pub(crate) mod session;
+pub mod dispatch;
+pub mod handles;
+pub mod request_handler;
+pub mod rpc;
+pub mod service;
+pub mod session;
 
 use std::collections::HashMap;
 
