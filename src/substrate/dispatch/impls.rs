@@ -2,6 +2,9 @@ use std::fmt::Debug;
 
 use async_trait::async_trait;
 
+use crate::substrate::rpc::chain::ChainHead;
+use crate::substrate::rpc::grandpa::GrandpaJustification;
+use crate::substrate::rpc::state::{RuntimeVersion, StateStorage};
 use crate::{
     rpc_client::NotificationStream,
     substrate::{constants, dispatch::SubscriptionDispatcher, service::*},
@@ -28,27 +31,30 @@ impl SubscriptionDispatcher for StateStorageDispatcher {
 
     async fn dispatch(&self, conns: WsConnections, mut stream: NotificationStream) {
         let chain = self.chain.clone();
+        let method = self.method();
 
         tokio::spawn(async move {
             while let Some(data) = stream.next().await {
                 // we get a new data then we send it to all conns
-                for (_, conn) in conns.inner().read().await.iter() {
-                    let conn = conn.clone();
-                    // send one data to n subscription for one connection
-                    match serde_json::value::from_value(data.params.result.clone()) {
-                        Ok(data) => {
+                match serde_json::value::from_value::<StateStorage>(data.params.result.clone()) {
+                    Ok(data) => {
+                        for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
                                 .await
                                 .expect("We check it before subscription");
-                            send_state_storage(sessions.storage_sessions.clone(), conn, data);
+                            send_state_storage(
+                                sessions.storage_sessions.clone(),
+                                conn.clone(),
+                                data.clone(),
+                            );
                         }
+                    }
 
-                        Err(err) => {
-                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
-                        }
-                    };
-                }
+                    Err(err) => {
+                        log::warn!("Receive an illegal `{}` data: {}: {}", method, err, &data)
+                    }
+                };
             }
         });
     }
@@ -73,31 +79,30 @@ impl SubscriptionDispatcher for StateRuntimeVersionDispatcher {
 
     async fn dispatch(&self, conns: WsConnections, mut stream: NotificationStream) {
         let chain = self.chain.clone();
+        let method = self.method();
 
         tokio::spawn(async move {
             while let Some(data) = stream.next().await {
                 // we get a new data then we send it to all conns
-                for (_, conn) in conns.inner().read().await.iter() {
-                    let conn = conn.clone();
-                    // send one data to n subscription for one connection
-                    match serde_json::value::from_value(data.params.result.clone()) {
-                        Ok(data) => {
+                match serde_json::value::from_value::<RuntimeVersion>(data.params.result.clone()) {
+                    Ok(data) => {
+                        for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
                                 .await
                                 .expect("We check it before subscription");
                             send_state_runtime_version(
                                 sessions.runtime_version_sessions.clone(),
-                                conn,
-                                data,
+                                conn.clone(),
+                                data.clone(),
                             );
                         }
+                    }
 
-                        Err(err) => {
-                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
-                        }
-                    };
-                }
+                    Err(err) => {
+                        log::warn!("Receive an illegal `{}` data: {}: {}", method, err, &data)
+                    }
+                };
             }
         });
     }
@@ -122,27 +127,30 @@ impl SubscriptionDispatcher for ChainNewHeadDispatcher {
 
     async fn dispatch(&self, conns: WsConnections, mut stream: NotificationStream) {
         let chain = self.chain.clone();
+        let method = self.method();
 
         tokio::spawn(async move {
             while let Some(data) = stream.next().await {
                 // we get a new data then we send it to all conns
-                for (_, conn) in conns.inner().read().await.iter() {
-                    let conn = conn.clone();
-                    // send one data to n subscription for one connection
-                    match serde_json::value::from_value(data.params.result.clone()) {
-                        Ok(data) => {
+                match serde_json::value::from_value::<ChainHead>(data.params.result.clone()) {
+                    Ok(data) => {
+                        for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
                                 .await
                                 .expect("We check it before subscription");
-                            send_chain_new_head(sessions.new_head_sessions.clone(), conn, data);
+                            send_chain_new_head(
+                                sessions.runtime_version_sessions.clone(),
+                                conn.clone(),
+                                data.clone(),
+                            );
                         }
+                    }
 
-                        Err(err) => {
-                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
-                        }
-                    };
-                }
+                    Err(err) => {
+                        log::warn!("Receive an illegal `{}` data: {}: {}", method, err, &data)
+                    }
+                };
             }
         });
     }
@@ -167,31 +175,30 @@ impl SubscriptionDispatcher for ChainFinalizedHeadDispatcher {
 
     async fn dispatch(&self, conns: WsConnections, mut stream: NotificationStream) {
         let chain = self.chain.clone();
+        let method = self.method();
 
         tokio::spawn(async move {
             while let Some(data) = stream.next().await {
                 // we get a new data then we send it to all conns
-                for (_, conn) in conns.inner().read().await.iter() {
-                    let conn = conn.clone();
-                    // send one data to n subscription for one connection
-                    match serde_json::value::from_value(data.params.result.clone()) {
-                        Ok(data) => {
+                match serde_json::value::from_value::<ChainHead>(data.params.result.clone()) {
+                    Ok(data) => {
+                        for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
                                 .await
                                 .expect("We check it before subscription");
                             send_chain_finalized_head(
-                                sessions.finalized_head_sessions.clone(),
-                                conn,
-                                data,
+                                sessions.runtime_version_sessions.clone(),
+                                conn.clone(),
+                                data.clone(),
                             );
                         }
+                    }
 
-                        Err(err) => {
-                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
-                        }
-                    };
-                }
+                    Err(err) => {
+                        log::warn!("Receive an illegal `{}` data: {}: {}", method, err, &data)
+                    }
+                };
             }
         });
     }
@@ -216,26 +223,30 @@ impl SubscriptionDispatcher for ChainAllHeadDispatcher {
 
     async fn dispatch(&self, conns: WsConnections, mut stream: NotificationStream) {
         let chain = self.chain.clone();
+        let method = self.method();
+
         tokio::spawn(async move {
             while let Some(data) = stream.next().await {
                 // we get a new data then we send it to all conns
-                for (_, conn) in conns.inner().read().await.iter() {
-                    let conn = conn.clone();
-                    // send one data to n subscription for one connection
-                    match serde_json::value::from_value(data.params.result.clone()) {
-                        Ok(data) => {
+                match serde_json::value::from_value::<ChainHead>(data.params.result.clone()) {
+                    Ok(data) => {
+                        for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
                                 .await
                                 .expect("We check it before subscription");
-                            send_chain_all_head(sessions.all_head_sessions.clone(), conn, data);
+                            send_chain_all_head(
+                                sessions.runtime_version_sessions.clone(),
+                                conn.clone(),
+                                data.clone(),
+                            );
                         }
+                    }
 
-                        Err(err) => {
-                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
-                        }
-                    };
-                }
+                    Err(err) => {
+                        log::warn!("Receive an illegal `{}` data: {}: {}", method, err, &data)
+                    }
+                };
             }
         });
     }
@@ -260,30 +271,32 @@ impl SubscriptionDispatcher for GrandpaJustificationDispatcher {
 
     async fn dispatch(&self, conns: WsConnections, mut stream: NotificationStream) {
         let chain = self.chain.clone();
+        let method = self.method();
+
         tokio::spawn(async move {
             while let Some(data) = stream.next().await {
                 // we get a new data then we send it to all conns
-                for (_, conn) in conns.inner().read().await.iter() {
-                    let conn = conn.clone();
-                    // send one data to n subscription for one connection
-                    match serde_json::value::from_value(data.params.result.clone()) {
-                        Ok(data) => {
+                match serde_json::value::from_value::<GrandpaJustification>(
+                    data.params.result.clone(),
+                ) {
+                    Ok(data) => {
+                        for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
                                 .await
                                 .expect("We check it before subscription");
                             send_grandpa_justifications(
-                                sessions.grandpa_justifications.clone(),
-                                conn,
-                                data,
+                                sessions.runtime_version_sessions.clone(),
+                                conn.clone(),
+                                data.clone(),
                             );
                         }
+                    }
 
-                        Err(err) => {
-                            log::warn!("Receive an illegal subscribed data: {}: {}", err, &data)
-                        }
-                    };
-                }
+                    Err(err) => {
+                        log::warn!("Receive an illegal `{}` data: {}: {}", method, err, &data)
+                    }
+                };
             }
         });
     }
