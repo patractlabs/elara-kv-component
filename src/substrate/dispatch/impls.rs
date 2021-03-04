@@ -140,7 +140,7 @@ impl SubscriptionDispatcher for ChainNewHeadDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_chain_new_head(
-                                sessions.runtime_version_sessions.clone(),
+                                sessions.new_head_sessions.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );
@@ -188,7 +188,7 @@ impl SubscriptionDispatcher for ChainFinalizedHeadDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_chain_finalized_head(
-                                sessions.runtime_version_sessions.clone(),
+                                sessions.finalized_head_sessions.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );
@@ -236,7 +236,7 @@ impl SubscriptionDispatcher for ChainAllHeadDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_chain_all_head(
-                                sessions.runtime_version_sessions.clone(),
+                                sessions.all_head_sessions.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );
@@ -286,7 +286,7 @@ impl SubscriptionDispatcher for GrandpaJustificationDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_grandpa_justifications(
-                                sessions.runtime_version_sessions.clone(),
+                                sessions.grandpa_justifications.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );
