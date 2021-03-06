@@ -193,7 +193,7 @@ impl WsConnection {
                 let mut bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 2));
                 bytes.extend_from_slice(b"gzip");
                 let text_len = text.len();
-                let bytes = GzipEncoder::new(Compression::fast())
+                let bytes = GzipEncoder::new(Compression::best())
                     .encode(&text, bytes)
                     .expect("encode gzip data");
                 log::debug!(
