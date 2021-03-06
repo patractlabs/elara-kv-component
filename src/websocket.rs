@@ -184,13 +184,14 @@ impl WsConnection {
     }
 
     /// If compression is none, it send the original text with text type.
-    /// If compression is other, it send the encoded text with binary type.
+    /// If compression is other, it send the encoded text with binary type and encode type prefix 4 bytes string.
     pub async fn send_compression_data(&self, text: String) -> tungstenite::Result<()> {
         match self.compression_type() {
             CompressionType::None => self.send_text(text).await,
             CompressionType::Gzip => {
-                // According to actual test, the compression rate is about 40% ~ 50%
-                let bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 3));
+                // According to actual test, the compression rate is about 32% ~ 50%
+                let mut bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 2));
+                bytes.extend_from_slice(b"gzip");
                 let text_len = text.len();
                 let bytes = GzipEncoder::new(Compression::fast())
                     .encode(&text, bytes)
@@ -205,8 +206,9 @@ impl WsConnection {
             }
 
             CompressionType::Zlib => {
-                // According to actual test, the compression rate is about 40 ~ 45%
-                let bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 3));
+                // According to actual test, the compression rate is about 30 ~ 45%
+                let mut bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 2));
+                bytes.extend_from_slice(b"zlib");
                 let text_len = text.len();
                 let bytes = ZlibEncoder::new(Compression::best())
                     .encode(&text, bytes)
