@@ -74,6 +74,7 @@ pub struct ConfigResponse {
 pub enum CompressionType {
     None = 0,
     Gzip = 1,
+    Zlib = 2,
 }
 
 impl Default for CompressionType {
@@ -87,6 +88,7 @@ impl From<usize> for CompressionType {
         match i {
             0 => Self::None,
             1 => Self::Gzip,
+            2 => Self::Zlib,
             _ => unreachable!(),
         }
     }

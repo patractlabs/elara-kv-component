@@ -25,7 +25,7 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
-use crate::compression::{Encoder, GzipEncoder};
+use crate::compression::{Encoder, GzipEncoder, ZlibEncoder};
 use crate::message::{CompressionType, ConfigRequest, ElaraRequest};
 use crate::rpc_client::ArcRpcClient;
 use crate::substrate::session::SubscriptionSessions;
@@ -186,15 +186,37 @@ impl WsConnection {
     /// If compression is none, it send the original text with text type.
     /// If compression is other, it send the encoded text with binary type.
     pub async fn send_compression_data(&self, text: String) -> tungstenite::Result<()> {
-        log::debug!("compression type: {:?}", self.compression_type());
         match self.compression_type() {
             CompressionType::None => self.send_text(text).await,
             CompressionType::Gzip => {
-                // According to actual test, the compression rate is about 40%
-                let bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 2));
+                // According to actual test, the compression rate is about 40% ~ 50%
+                let bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 3));
+                let text_len = text.len();
                 let bytes = GzipEncoder::new(Compression::fast())
                     .encode(&text, bytes)
                     .expect("encode gzip data");
+                log::debug!(
+                    "gzip: {}, {}, {}",
+                    text_len,
+                    bytes.len(),
+                    bytes.len() as f64 / text_len as f64
+                );
+                self.send_binary(bytes).await
+            }
+
+            CompressionType::Zlib => {
+                // According to actual test, the compression rate is about 40 ~ 45%
+                let bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 3));
+                let text_len = text.len();
+                let bytes = ZlibEncoder::new(Compression::best())
+                    .encode(&text, bytes)
+                    .expect("encode zlib data");
+                log::debug!(
+                    "zlib: {}, {}, {}",
+                    text_len,
+                    bytes.len(),
+                    bytes.len() as f64 / text_len as f64
+                );
                 self.send_binary(bytes).await
             }
         }
