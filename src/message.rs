@@ -8,8 +8,8 @@ use crate::{session::ISession, Chain};
 #[serde(untagged)]
 pub enum ElaraRequest {
     SubscriptionRequest(SubscriptionRequest),
-    // TODO: pre config for connection
     ConfigRequest(ConfigRequest),
+    UnknownRequest(UnknownRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,6 +54,12 @@ impl From<ConfigRequest> for ElaraRequest {
 pub struct ConfigRequest {
     pub id: String,
     pub compression: CompressionType,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnknownRequest {
+    pub id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

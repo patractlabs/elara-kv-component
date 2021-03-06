@@ -231,7 +231,7 @@ impl WsConnection {
         const EXPECT: &str = "serialize a response message";
         let msg = msg.into();
         let req = serde_json::from_str::<ElaraRequest>(msg.as_str())
-            .map_err(|_| ElaraResponse::failure(None, None, Error::parse_error()));
+            .map_err(|err| ElaraResponse::failure(None, None, Error::invalid_params(err)));
 
         let req = match req {
             Ok(req) => req,
@@ -259,6 +259,18 @@ impl WsConnection {
                 let resp = self.handle_config_request(cfg).await;
                 self.send_text(serde_json::to_string(&resp).expect(EXPECT))
                     .await?;
+            }
+
+            ElaraRequest::UnknownRequest(req) => {
+                self.send_text(
+                    serde_json::to_string(&ElaraResponse::failure(
+                        req.id,
+                        None,
+                        Error::invalid_request(),
+                    ))
+                    .expect(EXPECT),
+                )
+                .await?;
             }
         }
 
