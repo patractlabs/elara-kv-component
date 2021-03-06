@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
-use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     message::{
@@ -148,9 +147,8 @@ pub async fn send_subscription_data<ST, Session, Input>(
 {
     for (subscription_id, session) in sessions.read().await.iter() {
         if let Some(data) = ST::transform(session, subscription_id.clone(), data.clone()) {
-            // two level json
             let msg = serialize_subscribed_message(session, &data);
-            let res = conn.send_message(Message::Text(msg)).await;
+            let res = conn.send_compression_data(msg).await;
             // we need to cleanup unlived conn outside
             if let Err(err) = res {
                 log::warn!(

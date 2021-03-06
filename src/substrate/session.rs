@@ -9,13 +9,12 @@ use crate::{
 
 #[derive(Debug, Clone, Default)]
 pub struct SubscriptionSessions {
-    pub storage_sessions: Arc<RwLock<StorageSessions>>,
-    pub runtime_version_sessions: Arc<RwLock<RuntimeVersionSessions>>,
+    pub storage: Arc<RwLock<StorageSessions>>,
+    pub runtime_version: Arc<RwLock<RuntimeVersionSessions>>,
     pub grandpa_justifications: Arc<RwLock<GrandpaJustificationSessions>>,
-    pub all_head_sessions: Arc<RwLock<AllHeadSessions>>,
-    pub new_head_sessions: Arc<RwLock<NewHeadSessions>>,
-    pub finalized_head_sessions: Arc<RwLock<FinalizedHeadSessions>>,
-    pub watch_extrinsic_sessions: Arc<RwLock<WatchExtrinsicSessions>>,
+    pub all_head: Arc<RwLock<AllHeadSessions>>,
+    pub new_head: Arc<RwLock<NewHeadSessions>>,
+    pub finalized_head: Arc<RwLock<FinalizedHeadSessions>>,
 }
 
 pub type AllHeadSession = NoParamSession;
@@ -47,7 +46,6 @@ impl ISession for StorageSession {
 pub type StorageSessions = Sessions<StorageSession>;
 
 pub type WatchExtrinsicSession = (Session, String);
-pub type WatchExtrinsicSessions = Sessions<WatchExtrinsicSession>;
 
 /// All represent for all storage keys. Some contains some keys.
 #[derive(Clone, Debug)]

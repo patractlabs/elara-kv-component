@@ -25,15 +25,19 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
+use crate::compression::{Encoder, GzipEncoder};
+use crate::message::{CompressionType, ConfigRequest, ElaraRequest};
 use crate::rpc_client::ArcRpcClient;
 use crate::substrate::session::SubscriptionSessions;
 use crate::{
     cmd::ServiceConfig,
-    message::{ElaraResponse, ElaraSubscriptionRequest, Error, Failure, MethodCall},
+    message::{ElaraResponse, Error, Failure, MethodCall, SubscriptionRequest},
     rpc_client::RpcClients,
     session::Session,
     substrate, Chain,
 };
+use flate2::Compression;
+use std::sync::atomic::AtomicUsize;
 
 /// A wrapper for WebSocketStream Server
 #[derive(Debug)]
@@ -65,6 +69,7 @@ impl WsServer {
             chain_handlers: Default::default(),
             clients,
             chains: Default::default(),
+            compression: Default::default(),
         })
     }
 }
@@ -97,6 +102,7 @@ pub struct WsConnection {
     chain_handlers: Arc<RwLock<HashMap<Chain, Box<dyn MessageHandler>>>>,
     clients: RpcClients,
     chains: Arc<RwLock<HashMap<Chain, substrate::session::SubscriptionSessions>>>,
+    compression: Arc<AtomicUsize>,
 }
 
 impl fmt::Display for WsConnection {
@@ -108,12 +114,6 @@ impl fmt::Display for WsConnection {
             self.closed.load(Ordering::SeqCst)
         )
     }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ConnectionSessions {
-    pub polkadot_sessions: substrate::session::SubscriptionSessions,
-    pub kusama_sessions: substrate::session::SubscriptionSessions,
 }
 
 impl WsConnection {
@@ -131,6 +131,21 @@ impl WsConnection {
     #[inline]
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
+    }
+
+    #[inline]
+    pub fn config(&self) -> &ServiceConfig {
+        &self.config
+    }
+
+    #[inline]
+    pub fn compression_type(&self) -> CompressionType {
+        self.compression.load(Ordering::SeqCst).into()
+    }
+
+    #[inline]
+    pub fn set_compression_type(&self, ty: CompressionType) {
+        self.compression.store(ty as usize, Ordering::SeqCst)
     }
 
     pub fn close(&self) {
@@ -158,20 +173,31 @@ impl WsConnection {
         self.sender.lock().await.send(msg).await
     }
 
+    #[inline]
     pub async fn send_text(&self, text: String) -> tungstenite::Result<()> {
         self.send_message(Message::Text(text)).await
     }
 
-    pub async fn send_messages(&self, msgs: Vec<Message>) -> tungstenite::Result<()> {
-        let mut sender = self.sender.lock().await;
-        for msg in msgs.into_iter() {
-            sender.feed(msg).await?;
-        }
-        sender.flush().await
+    #[inline]
+    pub async fn send_binary(&self, bytes: Vec<u8>) -> tungstenite::Result<()> {
+        self.send_message(Message::Binary(bytes)).await
     }
 
-    pub fn config(&self) -> &ServiceConfig {
-        &self.config
+    /// If compression is none, it send the original text with text type.
+    /// If compression is other, it send the encoded text with binary type.
+    pub async fn send_compression_data(&self, text: String) -> tungstenite::Result<()> {
+        log::debug!("compression type: {:?}", self.compression_type());
+        match self.compression_type() {
+            CompressionType::None => self.send_text(text).await,
+            CompressionType::Gzip => {
+                // According to actual test, the compression rate is about 40%
+                let bytes = Vec::with_capacity((text.len() >> 1) + (text.len() >> 2));
+                let bytes = GzipEncoder::new(Compression::fast())
+                    .encode(&text, bytes)
+                    .expect("encode gzip data");
+                self.send_binary(bytes).await
+            }
+        }
     }
 
     pub async fn register_message_handler(
@@ -202,28 +228,55 @@ impl WsConnection {
     /// Send successful response in other channel handler.
     /// The error result represents error occurred when send response
     pub async fn handle_message(&self, msg: impl Into<String>) -> tungstenite::Result<()> {
-        let res = self._handle_message(msg).await;
-        match res {
-            // send no rpc error response in here
+        const EXPECT: &str = "serialize a response message";
+        let msg = msg.into();
+        let req = serde_json::from_str::<ElaraRequest>(msg.as_str())
+            .map_err(|_| ElaraResponse::failure(None, None, Error::parse_error()));
+
+        let req = match req {
+            Ok(req) => req,
             Err(resp) => {
-                self.send_message(Message::Text(
-                    serde_json::to_string(&resp).expect("serialize a response message"),
-                ))
-                .await
+                self.send_text(serde_json::to_string(&resp).expect(EXPECT))
+                    .await?;
+                return Ok(());
             }
-            // do other rpc logic in other way
-            Ok(()) => Ok(()),
+        };
+
+        match req {
+            ElaraRequest::SubscriptionRequest(req) => {
+                let resp = self.handle_subscription_request(req).await;
+                match resp {
+                    // send no rpc error response in here
+                    Err(resp) => {
+                        self.send_text(serde_json::to_string(&resp).expect(EXPECT))
+                            .await?;
+                    }
+                    // if ok, handle the request in other task
+                    Ok(()) => {}
+                }
+            }
+            ElaraRequest::ConfigRequest(cfg) => {
+                let resp = self.handle_config_request(cfg).await;
+                self.send_text(serde_json::to_string(&resp).expect(EXPECT))
+                    .await?;
+            }
         }
+
+        Ok(())
+    }
+
+    async fn handle_config_request(&self, cfg: ConfigRequest) -> ElaraResponse {
+        self.set_compression_type(cfg.compression);
+        ElaraResponse::config_response(cfg.id, None)
     }
 
     // when result is ok, it means to send it to corresponding subscription channel to handle it.
     // When result is err, it means to response the err to peer.
     // The error is elara error code, not jsonrpc error.
-    async fn _handle_message(&self, msg: impl Into<String>) -> Result<(), ElaraResponse> {
-        let msg = msg.into();
-        let msg = serde_json::from_str::<ElaraSubscriptionRequest>(msg.as_str())
-            .map_err(|_| ElaraResponse::failure(None, None, Error::parse_error()))?;
-
+    async fn handle_subscription_request(
+        &self,
+        msg: SubscriptionRequest,
+    ) -> Result<(), ElaraResponse> {
         // validate node name
         if !self.config.validate(&msg.chain) {
             return Err(ElaraResponse::failure(
