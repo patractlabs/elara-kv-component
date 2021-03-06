@@ -6,7 +6,7 @@ use std::{
 pub use jsonrpc_pubsub::manager::{IdProvider, NumericIdProvider, RandomStringIdProvider};
 
 use crate::{
-    message::{ElaraRequest, Id},
+    message::{ElaraSubscriptionRequest, Id},
     Chain,
 };
 
@@ -33,8 +33,8 @@ impl ISession for Session {
     }
 }
 
-impl From<&ElaraRequest> for Session {
-    fn from(msg: &ElaraRequest) -> Self {
+impl From<&ElaraSubscriptionRequest> for Session {
+    fn from(msg: &ElaraSubscriptionRequest) -> Self {
         Self {
             chain: msg.chain.clone(),
             client_id: msg.id.clone(),

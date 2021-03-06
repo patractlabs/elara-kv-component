@@ -25,10 +25,11 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
+use crate::rpc_client::ArcRpcClient;
 use crate::substrate::session::SubscriptionSessions;
 use crate::{
     cmd::ServiceConfig,
-    message::{ElaraRequest, ElaraResponse, Error, Failure, MethodCall},
+    message::{ElaraResponse, ElaraSubscriptionRequest, Error, Failure, MethodCall},
     rpc_client::RpcClients,
     session::Session,
     substrate, Chain,
@@ -94,8 +95,8 @@ pub struct WsConnection {
     sender: Arc<Mutex<WsSender>>,
     receiver: Arc<Mutex<WsReceiver>>,
     chain_handlers: Arc<RwLock<HashMap<Chain, Box<dyn MessageHandler>>>>,
-    pub clients: RpcClients,
-    pub chains: Arc<RwLock<HashMap<Chain, substrate::session::SubscriptionSessions>>>,
+    clients: RpcClients,
+    chains: Arc<RwLock<HashMap<Chain, substrate::session::SubscriptionSessions>>>,
 }
 
 impl fmt::Display for WsConnection {
@@ -194,6 +195,10 @@ impl WsConnection {
         chains.get(chain).cloned()
     }
 
+    pub fn get_client(&self, chain: &Chain) -> Option<ArcRpcClient> {
+        self.clients.get(chain).cloned()
+    }
+
     /// Send successful response in other channel handler.
     /// The error result represents error occurred when send response
     pub async fn handle_message(&self, msg: impl Into<String>) -> tungstenite::Result<()> {
@@ -216,7 +221,7 @@ impl WsConnection {
     // The error is elara error code, not jsonrpc error.
     async fn _handle_message(&self, msg: impl Into<String>) -> Result<(), ElaraResponse> {
         let msg = msg.into();
-        let msg = serde_json::from_str::<ElaraRequest>(msg.as_str())
+        let msg = serde_json::from_str::<ElaraSubscriptionRequest>(msg.as_str())
             .map_err(|_| ElaraResponse::failure(None, None, Error::parse_error()))?;
 
         // validate node name

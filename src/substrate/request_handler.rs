@@ -43,13 +43,13 @@ impl RequestHandler {
 }
 
 impl MessageHandler for RequestHandler {
+    fn chain(&self) -> Chain {
+        self.chain.clone()
+    }
+
     fn handle_response(&mut self, conn: WsConnection, sessions: SubscriptionSessions) {
         let receivers = self.receivers.take().expect("Only can be called once");
         handle_subscription_response(conn, sessions, receivers)
-    }
-
-    fn chain(&self) -> Chain {
-        self.chain.clone()
     }
 
     fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse> {
@@ -150,8 +150,7 @@ pub async fn start_state_runtime_version_handle(
                 let _res = conn.send_text(msg).await;
 
                 // we need get the latest storage for these keys
-                let clients = conn.clients.clone();
-                let client = clients.get(&session.chain()).expect("never panic");
+                let client = conn.get_client(&session.chain()).expect("get chain client");
                 let subscription_id: Id =
                     serde_json::from_value(success.result).expect("never panic");
 
@@ -164,7 +163,7 @@ pub async fn start_state_runtime_version_handle(
 async fn send_latest_runtime_version(
     conn: WsConnection,
     session: &Session,
-    client: &ArcRpcClient,
+    client: ArcRpcClient,
     subscription_id: Id,
 ) {
     let client = client.read().await;
@@ -222,8 +221,7 @@ pub async fn start_state_storage_handle(
                 let _res = conn.send_message(Message::Text(msg)).await;
 
                 // we need get the latest storage for these keys
-                let clients = conn.clients.clone();
-                let client = clients.get(&session.chain()).expect("get chain");
+                let client = conn.get_client(&session.chain()).expect("get chain client");
                 let stream = {
                     let client = client.read().await;
                     log::debug!("start_subscribe {:?}", request.params);
