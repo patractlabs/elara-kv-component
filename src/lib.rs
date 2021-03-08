@@ -1,4 +1,5 @@
 pub mod cmd;
+pub mod compression;
 pub mod message;
 pub mod rpc_client;
 pub mod session;

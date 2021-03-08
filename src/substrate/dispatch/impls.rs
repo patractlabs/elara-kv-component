@@ -44,7 +44,7 @@ impl SubscriptionDispatcher for StateStorageDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_state_storage(
-                                sessions.storage_sessions.clone(),
+                                sessions.storage.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );
@@ -92,7 +92,7 @@ impl SubscriptionDispatcher for StateRuntimeVersionDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_state_runtime_version(
-                                sessions.runtime_version_sessions.clone(),
+                                sessions.runtime_version.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );
@@ -140,7 +140,7 @@ impl SubscriptionDispatcher for ChainNewHeadDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_chain_new_head(
-                                sessions.new_head_sessions.clone(),
+                                sessions.new_head.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );
@@ -188,7 +188,7 @@ impl SubscriptionDispatcher for ChainFinalizedHeadDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_chain_finalized_head(
-                                sessions.finalized_head_sessions.clone(),
+                                sessions.finalized_head.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );
@@ -236,7 +236,7 @@ impl SubscriptionDispatcher for ChainAllHeadDispatcher {
                                 .await
                                 .expect("We check it before subscription");
                             send_chain_all_head(
-                                sessions.all_head_sessions.clone(),
+                                sessions.all_head.clone(),
                                 conn.clone(),
                                 data.clone(),
                             );

@@ -206,11 +206,10 @@ async fn handle_connection(connection: WsConnection) {
                 };
             }
 
-            // closed connection
             Err(Error::ConnectionClosed) => break,
 
             Err(err) => {
-                log::warn!("Err occurred when receive a message: {}", err);
+                log::warn!("Error occurred when receive a message: {}", err);
                 break;
             }
         }

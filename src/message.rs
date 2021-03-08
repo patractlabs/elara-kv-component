@@ -5,44 +5,20 @@ use crate::{session::ISession, Chain};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ElaraRequest {
-    pub id: String,
-    pub chain: Chain,
-    pub request: String,
+#[serde(untagged)]
+pub enum ElaraRequest {
+    SubscriptionRequest(SubscriptionRequest),
+    ConfigRequest(ConfigRequest),
+    UnknownRequest(UnknownRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
 pub enum ElaraResponse {
-    ElaraSuccess(ElaraSuccessResponse),
-    ElaraFailure(ElaraFailureResponse),
-}
-
-impl ElaraResponse {
-    pub fn success(id: String, chain: Chain, result: String) -> Self {
-        Self::ElaraSuccess(ElaraSuccessResponse { id, chain, result })
-    }
-
-    pub fn failure(id: Option<String>, chain: Option<Chain>, error: Error) -> Self {
-        Self::ElaraFailure(ElaraFailureResponse { id, chain, error })
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ElaraSuccessResponse {
-    pub id: String,
-    pub chain: Chain,
-    pub result: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ElaraFailureResponse {
-    pub id: Option<String>,
-    pub chain: Option<Chain>,
-    pub error: Error,
+    Success(SuccessResponse),
+    Failure(FailureResponse),
+    ConfigResponse(ConfigResponse),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,11 +29,118 @@ pub struct ElaraSubscriptionResponse {
     pub data: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubscriptionRequest {
+    pub id: String,
+    pub chain: Chain,
+    pub request: String,
+}
+
+impl From<SubscriptionRequest> for ElaraRequest {
+    fn from(resp: SubscriptionRequest) -> Self {
+        Self::SubscriptionRequest(resp)
+    }
+}
+
+impl From<ConfigRequest> for ElaraRequest {
+    fn from(req: ConfigRequest) -> Self {
+        Self::ConfigRequest(req)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigRequest {
+    pub id: String,
+    pub compression: CompressionType,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnknownRequest {
+    pub id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigResponse {
+    pub id: String,
+    pub error: Option<Error>,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CompressionType {
+    None = 0,
+    Gzip = 1,
+    Zlib = 2,
+}
+
+impl Default for CompressionType {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl From<usize> for CompressionType {
+    fn from(i: usize) -> Self {
+        match i {
+            0 => Self::None,
+            1 => Self::Gzip,
+            2 => Self::Zlib,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl ElaraResponse {
+    pub fn success(id: String, chain: Chain, result: String) -> Self {
+        Self::Success(SuccessResponse { id, chain, result })
+    }
+
+    pub fn failure(id: Option<String>, chain: Option<Chain>, error: Error) -> Self {
+        Self::Failure(FailureResponse { id, chain, error })
+    }
+
+    pub fn config_response(id: String, error: Option<Error>) -> Self {
+        Self::ConfigResponse(ConfigResponse { id, error })
+    }
+}
+
+impl From<SuccessResponse> for ElaraResponse {
+    fn from(resp: SuccessResponse) -> Self {
+        Self::Success(resp)
+    }
+}
+
+impl From<FailureResponse> for ElaraResponse {
+    fn from(resp: FailureResponse) -> Self {
+        Self::Failure(resp)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SuccessResponse {
+    pub id: String,
+    pub chain: Chain,
+    pub result: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FailureResponse {
+    pub id: Option<String>,
+    pub chain: Option<Chain>,
+    pub error: Error,
+}
+
 pub fn serialize_failure_response<S>(session: &S, error: Error) -> String
 where
     S: ISession,
 {
-    let msg = ElaraFailureResponse {
+    let msg = FailureResponse {
         id: Some(session.client_id()),
         chain: Some(session.chain()),
         error,
@@ -71,7 +154,7 @@ where
     S: ISession,
 {
     let result = serde_json::to_string(&result).expect("serialize a substrate jsonrpc");
-    let msg = ElaraSuccessResponse {
+    let msg = SuccessResponse {
         id: session.client_id(),
         chain: session.chain(),
         result,
@@ -106,7 +189,7 @@ mod tests {
     "request": "{\n\"id\": 141,\n\"jsonrpc\": \"2.0\",\n\"method\": \"state_subscribeStorage\",\n\"params\": [ [\"0x2aeddc77fe58c98d50bd37f1b90840f9cd7f37317cd20b61e9bd46fab87047149c21b6ab44c00eb3127a30e486492921e58f2564b36ab1ca21ff630672f0e76920edd601f8f2b89a\"]]}"
 }
 "#;
-        let request = serde_json::from_str::<ElaraRequest>(elara_request).unwrap();
+        let request = serde_json::from_str::<SubscriptionRequest>(elara_request).unwrap();
         let actual_request = MethodCall::new(
             "state_subscribeStorage",
             Some(Params::Array(vec![
@@ -129,7 +212,7 @@ mod tests {
 }
 "#;
 
-        let response = serde_json::from_str::<ElaraSuccessResponse>(data).unwrap();
+        let response = serde_json::from_str::<SuccessResponse>(data).unwrap();
         let actual_response = Success::new(
             "0x91b171bb158e2d3848fa23a9f1c25182fb8e20313b2c1eb49219da7a70ce90c3".into(),
             Id::Num(1),
@@ -160,5 +243,42 @@ mod tests {
         let actual_subscription = SubscriptionNotification::new("state_storage", params);
         let sub = serde_json::from_str::<SubscriptionNotification>(&response.data).unwrap();
         assert_eq!(sub, actual_subscription);
+    }
+
+    #[test]
+    fn test_state_runtime_version() {
+        let data = r#"
+{
+    "jsonrpc": "2.0",
+    "method": "state_runtimeVersion",
+    "params": {
+        "result": {
+            "apis": [
+                ["0xdf6acb689907609b", 3],
+                ["0x37e397fc7c91f5e4", 1],
+                ["0x40fe3ad401f8959a", 4],
+                ["0xd2bc9897eed08f15", 2],
+                ["0xf78b278be53f454c", 2],
+                ["0xaf2c0297a23e6d3d", 1],
+                ["0xed99c5acb25eedf5", 2],
+                ["0xcbca25e39f142387", 2],
+                ["0x687ad44ad37f03c2", 1],
+                ["0xab3c0572291feb8b", 1],
+                ["0xbc9d89904f5b923f", 1],
+                ["0x37c8bb1350a9a2a8", 1]
+            ],
+            "authoringVersion": 0,
+            "implName": "parity-polkadot",
+            "implVersion": 0,
+            "specName": "polkadot",
+            "specVersion": 28,
+            "transactionVersion": 6
+        },
+        "subscription": "IU2BjP8XYCzKNLbE"
+    }
+}
+"#;
+
+        serde_json::from_str::<SubscriptionNotification>(data).unwrap();
     }
 }

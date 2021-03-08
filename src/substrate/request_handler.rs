@@ -2,7 +2,6 @@ use std::{borrow::BorrowMut, collections::HashMap, fmt::Debug, sync::Arc};
 
 use async_jsonrpc_client::Output;
 use tokio::sync::{mpsc, RwLock};
-use tokio_tungstenite::tungstenite::Message;
 
 use crate::substrate::Method;
 use crate::{
@@ -43,13 +42,13 @@ impl RequestHandler {
 }
 
 impl MessageHandler for RequestHandler {
+    fn chain(&self) -> Chain {
+        self.chain.clone()
+    }
+
     fn handle_response(&mut self, conn: WsConnection, sessions: SubscriptionSessions) {
         let receivers = self.receivers.take().expect("Only can be called once");
         handle_subscription_response(conn, sessions, receivers)
-    }
-
-    fn chain(&self) -> Chain {
-        self.chain.clone()
     }
 
     fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse> {
@@ -122,7 +121,7 @@ pub async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
             Err(s) => s,
         };
 
-        let _res = conn.send_message(Message::Text(msg)).await;
+        let _res = conn.send_text(msg).await;
     }
 }
 
@@ -150,8 +149,7 @@ pub async fn start_state_runtime_version_handle(
                 let _res = conn.send_text(msg).await;
 
                 // we need get the latest storage for these keys
-                let clients = conn.clients.clone();
-                let client = clients.get(&session.chain()).expect("never panic");
+                let client = conn.get_client(&session.chain()).expect("get chain client");
                 let subscription_id: Id =
                     serde_json::from_value(success.result).expect("never panic");
 
@@ -164,7 +162,7 @@ pub async fn start_state_runtime_version_handle(
 async fn send_latest_runtime_version(
     conn: WsConnection,
     session: &Session,
-    client: &ArcRpcClient,
+    client: ArcRpcClient,
     subscription_id: Id,
 ) {
     let client = client.read().await;
@@ -187,7 +185,7 @@ async fn send_latest_runtime_version(
             );
 
             let msg = serialize_subscribed_message(session, &data);
-            let _res = conn.send_text(msg).await;
+            let _res = conn.send_compression_data(msg).await;
         }
 
         Ok(Output::Failure(data)) => {
@@ -214,16 +212,15 @@ pub async fn start_state_storage_handle(
         match res {
             Err(err) => {
                 let msg = serialize_failure_response(&session, err);
-                let _res = conn.send_message(Message::Text(msg)).await;
+                let _res = conn.send_text(msg).await;
             }
 
             Ok(success) => {
                 let msg = serialize_success_response(&session, &success);
-                let _res = conn.send_message(Message::Text(msg)).await;
+                let _res = conn.send_text(msg).await;
 
                 // we need get the latest storage for these keys
-                let clients = conn.clients.clone();
-                let client = clients.get(&session.chain()).expect("get chain");
+                let client = conn.get_client(&session.chain()).expect("get chain client");
                 let stream = {
                     let client = client.read().await;
                     log::debug!("start_subscribe {:?}", request.params);
@@ -287,7 +284,7 @@ pub async fn start_state_storage_handle(
                                     SubscriptionNotificationParams::new(subscription_id, result),
                                 );
                                 let msg = serialize_subscribed_message(&session, &latest_changes);
-                                let _res = conn.send_text(msg).await;
+                                let _res = conn.send_compression_data(msg).await;
                             }
 
                             Err(err) => {
@@ -317,14 +314,14 @@ pub fn handle_subscription_response(
         match method {
             Method::SubscribeStorage => {
                 tokio::spawn(start_state_storage_handle(
-                    sessions.storage_sessions.clone(),
+                    sessions.storage.clone(),
                     conn.clone(),
                     receiver,
                 ));
             }
             Method::UnsubscribeStorage => {
                 tokio::spawn(start_handle(
-                    sessions.storage_sessions.clone(),
+                    sessions.storage.clone(),
                     conn.clone(),
                     receiver,
                     handle_state_unsubscribeStorage,
@@ -332,14 +329,14 @@ pub fn handle_subscription_response(
             }
             Method::SubscribeRuntimeVersion => {
                 tokio::spawn(start_state_runtime_version_handle(
-                    sessions.runtime_version_sessions.clone(),
+                    sessions.runtime_version.clone(),
                     conn.clone(),
                     receiver,
                 ));
             }
             Method::UnsubscribeRuntimeVersion => {
                 tokio::spawn(start_handle(
-                    sessions.runtime_version_sessions.clone(),
+                    sessions.runtime_version.clone(),
                     conn.clone(),
                     receiver,
                     handle_state_unsubscribeRuntimeVersion,
@@ -365,7 +362,7 @@ pub fn handle_subscription_response(
 
             Method::SubscribeNewHeads => {
                 tokio::spawn(start_handle(
-                    sessions.new_head_sessions.clone(),
+                    sessions.new_head.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_subscribeNewHeads,
@@ -373,7 +370,7 @@ pub fn handle_subscription_response(
             }
             Method::UnsubscribeNewHeads => {
                 tokio::spawn(start_handle(
-                    sessions.new_head_sessions.clone(),
+                    sessions.new_head.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_unsubscribeNewHeads,
@@ -382,7 +379,7 @@ pub fn handle_subscription_response(
 
             Method::SubscribeAllHeads => {
                 tokio::spawn(start_handle(
-                    sessions.all_head_sessions.clone(),
+                    sessions.all_head.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_subscribeAllHeads,
@@ -390,7 +387,7 @@ pub fn handle_subscription_response(
             }
             Method::UnsubscribeAllHeads => {
                 tokio::spawn(start_handle(
-                    sessions.all_head_sessions.clone(),
+                    sessions.all_head.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_unsubscribeAllHeads,
@@ -399,7 +396,7 @@ pub fn handle_subscription_response(
 
             Method::SubscribeFinalizedHeads => {
                 tokio::spawn(start_handle(
-                    sessions.finalized_head_sessions.clone(),
+                    sessions.finalized_head.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_subscribeFinalizedHeads,
@@ -407,7 +404,7 @@ pub fn handle_subscription_response(
             }
             Method::UnsubscribeFinalizedHeads => {
                 tokio::spawn(start_handle(
-                    sessions.finalized_head_sessions.clone(),
+                    sessions.finalized_head.clone(),
                     conn.clone(),
                     receiver,
                     handle_chain_unsubscribeFinalizedHeads,
