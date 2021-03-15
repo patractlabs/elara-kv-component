@@ -2,7 +2,7 @@
 
 ## API
 
-See <https://tower.im/teams/893726/repository_documents/806/>
+See [API](./API.md)
 
 ## Config
 
