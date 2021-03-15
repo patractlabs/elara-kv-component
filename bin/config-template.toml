@@ -2,6 +2,10 @@
 # Elara kv websocket service address
 addr = "localhost:9002"
 
+[client]
+max_request_cap = 256
+max_cap_per_subscription = 64
+
 # polkadot config
 [nodes.polkadot]
 url = "wss://rpc.polkadot.io"

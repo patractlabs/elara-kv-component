@@ -81,13 +81,13 @@ async fn remove_expired_connections(mut conns: WsConnections) {
 }
 
 async fn create_clients(
-    cfg: &ServiceConfig,
+    config: &ServiceConfig,
     connections: WsConnections,
 ) -> rpc_client::Result<RpcClients> {
     let mut clients: RpcClients = Default::default();
     // started to subscribe chain node by ws client
-    for (chain, cfg) in cfg.nodes.iter() {
-        let client = RpcClient::new(chain.clone(), cfg.url.clone()).await?;
+    for (chain, node) in config.nodes.iter() {
+        let client = RpcClient::new(chain.clone(), node.url.clone(), config.client).await?;
         subscribe_chain(connections.clone(), &client).await;
         let client = Arc::new(RwLock::new(client));
         tokio::spawn(health_check(connections.clone(), client.clone()));

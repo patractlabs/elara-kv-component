@@ -26,6 +26,7 @@ impl CliOpts {
         let mut result = ServiceConfig {
             ws: config.ws,
             nodes: HashMap::default(),
+            client: config.client,
         };
         for (node_name, node_config) in config.nodes.into_iter() {
             result.nodes.insert(Chain::from(node_name), node_config);
@@ -38,6 +39,7 @@ impl CliOpts {
 pub struct ServiceConfig {
     pub ws: WsConfig,
     pub nodes: HashMap<Chain, NodeConfig>,
+    pub client: Option<RpcClientConfig>,
 }
 
 impl ServiceConfig {
@@ -51,6 +53,7 @@ impl ServiceConfig {
 struct ServiceInnerConfig {
     ws: WsConfig,
     nodes: HashMap<String, NodeConfig>,
+    pub client: Option<RpcClientConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,6 +64,12 @@ pub struct WsConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub url: String,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct RpcClientConfig {
+    pub max_request_cap: Option<usize>,
+    pub max_cap_per_subscription: Option<usize>,
 }
 
 #[test]
@@ -83,6 +92,7 @@ fn test_toml_config() {
             addr: "localhost:9002".into(),
         },
         nodes,
+        client: None,
     };
 
     let toml = toml::to_string(&config).unwrap();

@@ -7,6 +7,7 @@ use async_jsonrpc_client::{
 use tokio::sync::RwLock;
 
 use crate::{
+    cmd::RpcClientConfig,
     message::Id,
     substrate::constants::{state_getRuntimeVersion, system_health},
     Chain,
@@ -27,9 +28,21 @@ pub type ArcRpcClient = Arc<RwLock<RpcClient>>;
 pub type RpcClients = HashMap<Chain, ArcRpcClient>;
 
 impl RpcClient {
-    pub async fn new(chain: Chain, addr: impl Into<String>) -> Result<Self> {
+    pub async fn new(
+        chain: Chain,
+        addr: impl Into<String>,
+        config: Option<RpcClientConfig>,
+    ) -> Result<Self> {
         let addr = addr.into();
-        let ws = WsClient::new(addr.as_str()).await?;
+        let ws = if let Some(config) = config {
+            WsClient::builder()
+                .max_concurrent_request_capacity(config.max_request_cap.unwrap_or(256))
+                .max_capacity_per_subscription(config.max_cap_per_subscription.unwrap_or(64))
+                .build(addr.as_str())
+                .await?
+        } else {
+            WsClient::new(addr.as_str()).await?
+        };
 
         Ok(Self { chain, ws, addr })
     }
