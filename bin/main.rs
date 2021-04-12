@@ -190,7 +190,11 @@ async fn handle_connection(connection: WsConnection) {
                     }
 
                     Message::Text(s) => {
-                        log::debug!("Handle a request for connection {}: {}", connection.addr(), s);
+                        log::debug!(
+                            "Handle a request for connection {}: {}",
+                            connection.addr(),
+                            s
+                        );
                         let res = connection.handle_message(s).await;
                         match res {
                             Ok(()) => {}

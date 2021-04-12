@@ -106,7 +106,11 @@ pub fn handle_state_subscribeStorage(
     };
 
     let id = sessions.new_subscription_id();
-    log::debug!("create a state_storage subscription id {} for {:?}", id, storage_keys);
+    log::debug!(
+        "create a state_storage subscription id {} for {:?}",
+        id,
+        storage_keys
+    );
     sessions.insert(id.clone(), (session, storage_keys));
     Ok(Success::new(id.into(), request.id))
 }
