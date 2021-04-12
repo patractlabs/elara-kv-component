@@ -24,7 +24,7 @@ use crate::{
 };
 
 pub struct RequestHandler {
-    senders: MethodSenders,
+    senders: Option<MethodSenders>,
     receivers: Option<MethodReceivers>,
     chain: Chain,
 }
@@ -34,7 +34,7 @@ impl RequestHandler {
     pub fn new(chain: &Chain) -> Self {
         let (senders, receivers) = method_channel();
         Self {
-            senders,
+            senders: Some(senders),
             receivers: Some(receivers),
             chain: chain.clone(),
         }
@@ -52,9 +52,12 @@ impl MessageHandler for RequestHandler {
     }
 
     fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse> {
+        if self.senders.is_none() {
+            return Ok(());
+        }
+        let senders = self.senders.as_ref().unwrap();
         let method = Method::from(&request.method);
-        let sender = self
-            .senders
+        let sender = senders
             .get(&method)
             .ok_or_else(|| Failure::new(Error::method_not_found(), Some(request.id.clone())))
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
@@ -68,6 +71,11 @@ impl MessageHandler for RequestHandler {
             log::warn!("sender channel `{}` is closed", method);
         }
         Ok(())
+    }
+
+    fn close(&mut self) {
+        // we take the senders and drop it. After this, receivers always recv None.
+        self.senders.take();
     }
 }
 
@@ -101,7 +109,7 @@ fn method_channel() -> (MethodSenders, MethodReceivers) {
 }
 
 // according to different message to handle different subscription
-pub async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
+pub async fn start_handle<SessionItem: ISession, S: Debug + ISessions<SessionItem>>(
     sessions: Arc<RwLock<S>>,
     conn: WsConnection,
     mut receiver: MethodReceiver,
@@ -120,7 +128,6 @@ pub async fn start_handle<SessionItem, S: Debug + ISessions<SessionItem>>(
             Ok(s) => s,
             Err(s) => s,
         };
-
         let _res = conn.send_text(msg).await;
     }
 }
@@ -300,6 +307,7 @@ pub async fn start_state_storage_handle(
             }
         };
     }
+    log::debug!("Connection {} receiver closed", conn.addr());
 }
 
 // TODO: impl a registry for the following pattern
