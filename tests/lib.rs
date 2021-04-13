@@ -14,8 +14,6 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Error;
 use tokio_tungstenite::tungstenite::Message;
 
-// const ID: Arc<AtomicU64> = Arc::from(AtomicU64::from(0));
-
 static ID: OnceCell<AtomicU64> = OnceCell::new();
 
 fn get_id() -> u64 {
@@ -133,5 +131,3 @@ impl WsClient {
         }
     }
 }
-
-// fn create_clients()
