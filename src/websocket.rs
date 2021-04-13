@@ -30,7 +30,7 @@ use crate::message::{CompressionType, ConfigRequest, ElaraRequest};
 use crate::rpc_client::ArcRpcClient;
 use crate::substrate::session::SubscriptionSessions;
 use crate::{
-    cmd::ServiceConfig,
+    config::ServiceConfig,
     message::{ElaraResponse, Error, Failure, MethodCall, SubscriptionRequest},
     rpc_client::RpcClients,
     session::Session,
