@@ -1,18 +1,18 @@
 use anyhow::Result;
 use elara_kv_component::config::ServiceConfig;
 use elara_kv_component::message::{ElaraRequest, Id, MethodCall, Params, SubscriptionRequest};
+use elara_kv_component::start_server;
 use elara_kv_component::substrate::constants::state_subscribeStorage;
-use elara_kv_component::{start_server};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use once_cell::sync::OnceCell;
-use std::sync::atomic::{AtomicU64, Ordering, AtomicBool};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio_tungstenite::tungstenite::client::{IntoClientRequest};
+use tokio::sync::Mutex;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Error;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{connect_async};
-use tokio::sync::Mutex;
 
 // const ID: Arc<AtomicU64> = Arc::from(AtomicU64::from(0));
 
@@ -29,7 +29,6 @@ fn get_jsonrpc_id() -> Id {
 fn init() {
     ID.set(AtomicU64::from(1)).unwrap();
 }
-
 
 #[cfg(feature = "manual")]
 #[tokio::test]
@@ -63,12 +62,10 @@ url = "wss://rpc.polkadot.io"
 
 async fn run_clients(num: usize, timeout: Duration) {
     let mut handles = vec![];
-    for i in 0 .. num {
+    for i in 0..num {
         tokio::time::sleep(Duration::from_millis(50)).await;
         let handle = tokio::spawn(async move {
-            let mut client = WsClient::connect(
-                "ws://localhost:9002"
-            ).await;
+            let mut client = WsClient::connect("ws://localhost:9002").await;
             println!("A new client, id: {}", i);
             subscribe_state_storage(&mut client, Some(Params::Array(vec![]))).await;
 
@@ -82,7 +79,11 @@ async fn run_clients(num: usize, timeout: Duration) {
             });
 
             while let Some(resp) = reader.next().await {
-                println!("client_id: {}, receive server data len: {:?}", i, resp.unwrap().len());
+                println!(
+                    "client_id: {}, receive server data len: {:?}",
+                    i,
+                    resp.unwrap().len()
+                );
                 if exit.load(Ordering::SeqCst) {
                     return;
                 }
@@ -93,11 +94,7 @@ async fn run_clients(num: usize, timeout: Duration) {
 }
 
 async fn subscribe_state_storage(client: &mut WsClient, params: Option<Params>) {
-    let call = MethodCall::new(
-        state_subscribeStorage,
-        params,
-        get_jsonrpc_id(),
-    );
+    let call = MethodCall::new(state_subscribeStorage, params, get_jsonrpc_id());
     let request = serde_json::to_string(&call).unwrap();
 
     let request = SubscriptionRequest {
@@ -107,9 +104,14 @@ async fn subscribe_state_storage(client: &mut WsClient, params: Option<Params>) 
     };
 
     let request = serde_json::to_string(&ElaraRequest::SubscriptionRequest(request)).unwrap();
-    client.writer.lock().await.send(Message::Text(request)).await.unwrap();
+    client
+        .writer
+        .lock()
+        .await
+        .send(Message::Text(request))
+        .await
+        .unwrap();
 }
-
 
 #[derive(Clone)]
 pub struct WsClient {
