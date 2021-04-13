@@ -7,7 +7,7 @@ use async_jsonrpc_client::{
 use tokio::sync::RwLock;
 
 use crate::{
-    cmd::RpcClientConfig,
+    config::RpcClientConfig,
     message::Id,
     substrate::constants::{state_getRuntimeVersion, system_health},
     Chain,
