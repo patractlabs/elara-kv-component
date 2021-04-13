@@ -168,7 +168,6 @@ async fn handle_connection(connection: WsConnection) {
     let mut receiver = receiver.lock().await;
 
     while let Some(msg) = receiver.next().await {
-        log::debug!("recv a message: {:?}", msg);
         match msg {
             Ok(msg) => {
                 if msg.is_empty() {
@@ -191,6 +190,11 @@ async fn handle_connection(connection: WsConnection) {
                     }
 
                     Message::Text(s) => {
+                        log::debug!(
+                            "Handle a request for connection {}: {}",
+                            connection.addr(),
+                            s
+                        );
                         let res = connection.handle_message(s).await;
                         match res {
                             Ok(()) => {}
@@ -215,6 +219,6 @@ async fn handle_connection(connection: WsConnection) {
         }
     }
 
-    connection.close();
+    connection.close().await;
     log::info!("Closed connection to peer {}", connection.addr());
 }

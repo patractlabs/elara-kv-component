@@ -106,6 +106,11 @@ pub fn handle_state_subscribeStorage(
     };
 
     let id = sessions.new_subscription_id();
+    log::debug!(
+        "create a state_storage subscription id {} for {:?}",
+        id,
+        storage_keys
+    );
     sessions.insert(id.clone(), (session, storage_keys));
     Ok(Success::new(id.into(), request.id))
 }
@@ -167,6 +172,7 @@ fn _handle_no_param_method_call(
     let id = sessions.new_subscription_id();
     sessions.insert(id.clone(), session);
     // subscription id as result
+    log::debug!("create a subscription id: {}", id);
     Ok(Success::new(id.into(), request.id))
 }
 

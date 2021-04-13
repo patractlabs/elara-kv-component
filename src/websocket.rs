@@ -89,6 +89,9 @@ pub trait MessageHandler: Send + Sync {
     /// When the result is Ok, it means to send it to corresponding subscription channel to handle it.
     /// When the result is Err, it means to response the err to peer.
     fn handle(&self, session: Session, request: MethodCall) -> Result<(), ElaraResponse>;
+
+    /// Close related resource such as channel.
+    fn close(&mut self);
 }
 
 /// WsConnection maintains state. When WsServer accept a new connection, a WsConnection will be returned.
@@ -99,7 +102,7 @@ pub struct WsConnection {
     addr: SocketAddr,
     sender: Arc<Mutex<WsSender>>,
     receiver: Arc<Mutex<WsReceiver>>,
-    chain_handlers: Arc<RwLock<HashMap<Chain, Box<dyn MessageHandler>>>>,
+    chain_handlers: Arc<std::sync::RwLock<HashMap<Chain, Box<dyn MessageHandler>>>>,
     clients: RpcClients,
     chains: Arc<RwLock<HashMap<Chain, substrate::session::SubscriptionSessions>>>,
     compression: Arc<AtomicUsize>,
@@ -148,11 +151,16 @@ impl WsConnection {
         self.compression.store(ty as usize, Ordering::SeqCst)
     }
 
-    pub fn close(&self) {
+    pub async fn close(&self) {
         if self.is_closed() {
             return;
         }
         self.closed.store(true, Ordering::SeqCst);
+        let mut handlers = self.chain_handlers.write().unwrap();
+        for (chain, handler) in handlers.iter_mut() {
+            handler.close();
+            log::info!("Close `{}` channel for connection {}", chain, self.addr);
+        }
     }
 
     pub async fn send_close(&self) -> tungstenite::Result<()> {
@@ -236,7 +244,7 @@ impl WsConnection {
         handler.handle_response(self.clone(), sessions);
         self.chain_handlers
             .write()
-            .await
+            .unwrap()
             .insert(chain_name.clone(), Box::new(handler));
     }
 
@@ -252,6 +260,9 @@ impl WsConnection {
     /// Send successful response in other channel handler.
     /// The error result represents error occurred when send response
     pub async fn handle_message(&self, msg: impl Into<String>) -> tungstenite::Result<()> {
+        if self.is_closed() {
+            return Ok(());
+        }
         const EXPECT: &str = "serialize a response message";
         let msg = msg.into();
         let req = serde_json::from_str::<ElaraRequest>(msg.as_str())
@@ -328,7 +339,7 @@ impl WsConnection {
             .map_err(|err| serde_json::to_string(&err).expect("serialize a failure message"))
             .map_err(|res| ElaraResponse::success(msg.id.clone(), msg.chain.clone(), res))?;
 
-        let chain_handlers = self.chain_handlers.read().await;
+        let chain_handlers = self.chain_handlers.read().unwrap();
 
         let handler = chain_handlers.get(&msg.chain);
 
@@ -355,7 +366,7 @@ impl WsConnections {
         if !conn.is_closed() {
             let mut map = self.inner.write().await;
             let expired = map.insert(conn.addr(), conn);
-            Self::close(expired);
+            Self::close(expired).await;
         }
         self
     }
@@ -365,14 +376,14 @@ impl WsConnections {
         {
             let mut map = self.inner.write().await;
             let expired = map.remove(addr);
-            Self::close(expired);
+            Self::close(expired).await;
         }
         self
     }
 
-    fn close(conn: Option<WsConnection>) {
+    async fn close(conn: Option<WsConnection>) {
         if let Some(conn) = conn {
-            conn.close();
+            conn.close().await;
         }
     }
 
