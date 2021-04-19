@@ -22,6 +22,7 @@ use crate::substrate::dispatch::{
     StateStorageDispatcher,
 };
 use crate::substrate::request_handler::RequestHandler;
+use crate::websocket::ArcWsConnection;
 use crate::{
     rpc_client::{ArcRpcClient, RpcClient, RpcClients},
     websocket::{WsConnection, WsConnections, WsServer},
@@ -67,11 +68,12 @@ pub async fn start_server(config: ServiceConfig) -> Result<()> {
     loop {
         match server.accept(clients.clone(), config.clone()).await {
             Ok(conn) => {
+                let addr = conn.addr();
+                let conn = Arc::new(RwLock::new(conn));
                 connections.add(conn.clone()).await;
-
                 // We register the configured node handlers here
                 register_handlers(conn.clone()).await;
-                log::info!("New WebSocket connection: {}", conn.addr());
+                log::info!("New WebSocket connection: {}", addr);
                 log::info!("Total connection num: {}", connections.len().await);
 
                 tokio::spawn(handle_connection(conn));
@@ -88,18 +90,22 @@ async fn remove_expired_connections(mut conns: WsConnections) {
     loop {
         let mut expired = vec![];
         for (addr, conn) in conns.inner().read().await.iter() {
+            let conn = conn.read().await;
             log::debug!("{}", conn);
             if conn.is_closed() {
                 expired.push(*addr);
             }
         }
 
+        let mut removed = false;
         for addr in expired {
             log::info!("Removed a expired connection: {}", addr);
             conns.remove(&addr).await;
+            removed = true;
+        }
+        if removed {
             log::info!("Total connection num: {}", conns.len().await);
         }
-
         tokio::time::sleep(Duration::from_secs(CONN_EXPIRED_TIME_SECS)).await;
     }
 }
@@ -180,14 +186,16 @@ async fn subscribe_chain(connections: WsConnections, client: &RpcClient) {
         .unwrap_or_else(|_| panic!("Cannot subscribe chain `{}`", client.chain()))
 }
 
-async fn register_handlers(mut conn: WsConnection) {
+async fn register_handlers(mut conn: ArcWsConnection) {
+    let mut conn = conn.write().await;
     for (chain, _) in conn.config().nodes.clone() {
         let handler = RequestHandler::new(&chain);
         conn.register_message_handler(chain, handler).await;
     }
 }
 
-async fn handle_connection(connection: WsConnection) {
+async fn handle_connection(connection: ArcWsConnection) {
+    let connection = connection.read().await;
     let receiver = connection.receiver();
     let mut receiver = receiver.lock().await;
 

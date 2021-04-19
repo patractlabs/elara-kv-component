@@ -6,6 +6,7 @@ use std::sync::Arc;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
 
+use crate::websocket::ArcWsConnection;
 use crate::{
     message::{
         serialize_subscribed_message, Id, SubscriptionNotification, SubscriptionNotificationParams,
@@ -138,7 +139,7 @@ impl SubscriptionTransformer for StateStorageTransformer {
 /// Send a subscription data according to Transformer's output
 pub async fn send_subscription_data<ST, Session, Input>(
     sessions: Arc<RwLock<Sessions<Session>>>,
-    conn: WsConnection,
+    conn: ArcWsConnection,
     data: Input,
 ) where
     Session: 'static + ISession,
@@ -147,6 +148,7 @@ pub async fn send_subscription_data<ST, Session, Input>(
 {
     for (subscription_id, session) in sessions.read().await.iter() {
         if let Some(data) = ST::transform(session, subscription_id.clone(), data.clone()) {
+            let conn = conn.read().await;
             let msg = serialize_subscribed_message(session, &data);
             let res = conn.send_compression_data(msg).await;
             // we need to cleanup unlived conn outside
@@ -165,7 +167,7 @@ pub async fn send_subscription_data<ST, Session, Input>(
 
 pub fn send_state_storage(
     sessions: Arc<RwLock<StorageSessions>>,
-    conn: WsConnection,
+    conn: ArcWsConnection,
     data: StateStorage,
 ) {
     tokio::spawn(send_subscription_data::<StateStorageTransformer, _, _>(
@@ -175,7 +177,7 @@ pub fn send_state_storage(
 
 pub fn send_state_runtime_version(
     sessions: Arc<RwLock<RuntimeVersionSessions>>,
-    conn: WsConnection,
+    conn: ArcWsConnection,
     data: RuntimeVersion,
 ) {
     tokio::spawn(
@@ -185,7 +187,7 @@ pub fn send_state_runtime_version(
 
 pub fn send_grandpa_justifications(
     sessions: Arc<RwLock<GrandpaJustificationSessions>>,
-    conn: WsConnection,
+    conn: ArcWsConnection,
     data: GrandpaJustification,
 ) {
     tokio::spawn(send_subscription_data::<
@@ -197,7 +199,7 @@ pub fn send_grandpa_justifications(
 
 pub fn send_chain_all_head(
     sessions: Arc<RwLock<AllHeadSessions>>,
-    conn: WsConnection,
+    conn: ArcWsConnection,
     data: ChainHead,
 ) {
     tokio::spawn(send_subscription_data::<ChainAllHeadTransformer, _, _>(
@@ -207,7 +209,7 @@ pub fn send_chain_all_head(
 
 pub fn send_chain_new_head(
     sessions: Arc<RwLock<NewHeadSessions>>,
-    conn: WsConnection,
+    conn: ArcWsConnection,
     data: ChainHead,
 ) {
     tokio::spawn(send_subscription_data::<ChainNewHeadTransformer, _, _>(
@@ -217,7 +219,7 @@ pub fn send_chain_new_head(
 
 pub fn send_chain_finalized_head(
     sessions: Arc<RwLock<FinalizedHeadSessions>>,
-    conn: WsConnection,
+    conn: ArcWsConnection,
     data: ChainHead,
 ) {
     tokio::spawn(

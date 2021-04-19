@@ -39,10 +39,13 @@ impl SubscriptionDispatcher for StateStorageDispatcher {
                 match serde_json::value::from_value::<StateStorage>(data.params.result.clone()) {
                     Ok(data) => {
                         for (_, conn) in conns.inner().read().await.iter() {
-                            let sessions = conn
-                                .get_sessions(&chain)
-                                .await
-                                .expect("We check it before subscription");
+                            let sessions =  {
+                                let conn = conn.read().await;
+                                 conn
+                                    .get_sessions(&chain)
+                                    .await
+                                    .expect("We check it before subscription")
+                            };
                             send_state_storage(
                                 sessions.storage.clone(),
                                 conn.clone(),
@@ -87,10 +90,13 @@ impl SubscriptionDispatcher for StateRuntimeVersionDispatcher {
                 match serde_json::value::from_value::<RuntimeVersion>(data.params.result.clone()) {
                     Ok(data) => {
                         for (_, conn) in conns.inner().read().await.iter() {
-                            let sessions = conn
-                                .get_sessions(&chain)
-                                .await
-                                .expect("We check it before subscription");
+                            let sessions =  {
+                                let conn = conn.read().await;
+                                conn
+                                    .get_sessions(&chain)
+                                    .await
+                                    .expect("We check it before subscription")
+                            };
                             send_state_runtime_version(
                                 sessions.runtime_version.clone(),
                                 conn.clone(),
@@ -135,10 +141,13 @@ impl SubscriptionDispatcher for ChainNewHeadDispatcher {
                 match serde_json::value::from_value::<ChainHead>(data.params.result.clone()) {
                     Ok(data) => {
                         for (_, conn) in conns.inner().read().await.iter() {
-                            let sessions = conn
-                                .get_sessions(&chain)
-                                .await
-                                .expect("We check it before subscription");
+                            let sessions =  {
+                                let conn = conn.read().await;
+                                conn
+                                    .get_sessions(&chain)
+                                    .await
+                                    .expect("We check it before subscription")
+                            };
                             send_chain_new_head(
                                 sessions.new_head.clone(),
                                 conn.clone(),
@@ -183,10 +192,13 @@ impl SubscriptionDispatcher for ChainFinalizedHeadDispatcher {
                 match serde_json::value::from_value::<ChainHead>(data.params.result.clone()) {
                     Ok(data) => {
                         for (_, conn) in conns.inner().read().await.iter() {
-                            let sessions = conn
-                                .get_sessions(&chain)
-                                .await
-                                .expect("We check it before subscription");
+                            let sessions =  {
+                                let conn = conn.read().await;
+                                conn
+                                    .get_sessions(&chain)
+                                    .await
+                                    .expect("We check it before subscription")
+                            };
                             send_chain_finalized_head(
                                 sessions.finalized_head.clone(),
                                 conn.clone(),
@@ -231,10 +243,13 @@ impl SubscriptionDispatcher for ChainAllHeadDispatcher {
                 match serde_json::value::from_value::<ChainHead>(data.params.result.clone()) {
                     Ok(data) => {
                         for (_, conn) in conns.inner().read().await.iter() {
-                            let sessions = conn
-                                .get_sessions(&chain)
-                                .await
-                                .expect("We check it before subscription");
+                            let sessions =  {
+                                let conn = conn.read().await;
+                                conn
+                                    .get_sessions(&chain)
+                                    .await
+                                    .expect("We check it before subscription")
+                            };
                             send_chain_all_head(
                                 sessions.all_head.clone(),
                                 conn.clone(),
@@ -281,10 +296,13 @@ impl SubscriptionDispatcher for GrandpaJustificationDispatcher {
                 ) {
                     Ok(data) => {
                         for (_, conn) in conns.inner().read().await.iter() {
-                            let sessions = conn
-                                .get_sessions(&chain)
-                                .await
-                                .expect("We check it before subscription");
+                            let sessions =  {
+                                let conn = conn.read().await;
+                                conn
+                                    .get_sessions(&chain)
+                                    .await
+                                    .expect("We check it before subscription")
+                            };
                             send_grandpa_justifications(
                                 sessions.grandpa_justifications.clone(),
                                 conn.clone(),

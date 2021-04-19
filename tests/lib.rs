@@ -42,7 +42,7 @@ max_request_cap = 256
 max_cap_per_subscription = 64
 
 [nodes.polkadot]
-url = "wss://rpc.polkadot.io"
+url = "wss://kusama-rpc.polkadot.io"
     "#
     .to_string();
 
@@ -52,9 +52,11 @@ url = "wss://rpc.polkadot.io"
 
     let num = 1000;
     println!("{} clients", num);
-    run_clients(num, Duration::from_secs(120)).await;
+    {
+        run_clients(num, Duration::from_secs(120)).await;
+    }
     println!("{} clients created", num);
-    tokio::time::sleep(Duration::from_secs(120)).await;
+    tokio::time::sleep(Duration::from_secs(120 + 100)).await;
     Ok(())
 }
 

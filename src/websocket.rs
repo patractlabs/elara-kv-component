@@ -76,6 +76,7 @@ impl WsServer {
 
 pub type WsSender = SplitSink<WebSocketStream<TcpStream>, Message>;
 pub type WsReceiver = SplitStream<WebSocketStream<TcpStream>>;
+pub type ArcWsConnection = Arc<RwLock<WsConnection>>;
 
 /// Handle specified chain's subscription request
 pub trait MessageHandler: Send + Sync {
@@ -353,7 +354,7 @@ impl WsConnection {
 #[derive(Clone, Default)]
 pub struct WsConnections {
     // client addr ==> ws connection
-    inner: Arc<RwLock<HashMap<SocketAddr, WsConnection>>>,
+    inner: Arc<RwLock<HashMap<SocketAddr, ArcWsConnection>>>,
 }
 
 impl WsConnections {
@@ -362,10 +363,14 @@ impl WsConnections {
     }
 
     /// add an alive connection to pool
-    pub async fn add(&mut self, conn: WsConnection) -> &mut Self {
-        if !conn.is_closed() {
+    pub async fn add(&mut self, conn: ArcWsConnection) -> &mut Self {
+        let (addr, closed) = {
+            let conn2 = conn.read().await;
+            (conn2.addr(), conn2.is_closed())
+        };
+        if !closed {
             let mut map = self.inner.write().await;
-            let expired = map.insert(conn.addr(), conn);
+            let expired = map.insert(addr, conn);
             Self::close(expired).await;
         }
         self
@@ -375,20 +380,21 @@ impl WsConnections {
     pub async fn remove(&mut self, addr: &SocketAddr) -> &mut Self {
         {
             let mut map = self.inner.write().await;
-            let expired = map.remove(addr);
+            let mut expired = map.remove(addr);
             Self::close(expired).await;
         }
         self
     }
 
-    async fn close(conn: Option<WsConnection>) {
+    async fn close(conn: Option<ArcWsConnection>) {
         if let Some(conn) = conn {
+            let conn = conn.read().await;
             conn.close().await;
         }
     }
 
     #[inline]
-    pub fn inner(&self) -> Arc<RwLock<HashMap<SocketAddr, WsConnection>>> {
+    pub fn inner(&self) -> Arc<RwLock<HashMap<SocketAddr, ArcWsConnection>>> {
         self.inner.clone()
     }
 
