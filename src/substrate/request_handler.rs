@@ -3,6 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap, fmt::Debug, sync::Arc};
 use async_jsonrpc_client::Output;
 use tokio::sync::{mpsc, RwLock};
 
+use crate::substrate::dispatch::{DispatcherType};
 use crate::substrate::Method;
 use crate::{
     message::{
@@ -15,7 +16,7 @@ use crate::{
     substrate::{
         constants,
         handles::*,
-        rpc::state::{RuntimeVersion, StateStorage},
+        rpc::state::RuntimeVersion,
         session::{RuntimeVersionSessions, StorageSessions, SubscriptionSessions},
         MethodReceiver, MethodReceivers, MethodSenders,
     },
@@ -155,11 +156,10 @@ pub async fn start_state_runtime_version_handle(
                 let msg = serialize_success_response(&session, &success);
                 let _res = conn.send_text(msg).await;
 
-                // we need get the latest storage for these keys
-                let client = conn.get_client(&session.chain()).expect("get chain client");
+                // send the latest runtime version from rpc client
                 let subscription_id: Id =
                     serde_json::from_value(success.result).expect("never panic");
-
+                let client = conn.get_client(&session.chain()).expect("get chain client");
                 send_latest_runtime_version(conn.clone(), &session, client, subscription_id).await;
             }
         }
@@ -206,7 +206,7 @@ async fn send_latest_runtime_version(
 }
 
 // This is a special version for handling state storage.
-// Because we need the initial changes from chain.
+// Because we need return the latest storage immediately.
 pub async fn start_state_storage_handle(
     sessions: Arc<RwLock<StorageSessions>>,
     conn: WsConnection,
@@ -225,89 +225,48 @@ pub async fn start_state_storage_handle(
             Ok(success) => {
                 let msg = serialize_success_response(&session, &success);
                 let _res = conn.send_text(msg).await;
-
-                // we need get the latest storage for these keys
-                let client = conn.get_client(&session.chain()).expect("get chain client");
-                let stream = {
-                    let client = client.read().await;
-                    log::debug!("start_subscribe {:?}", request.params);
-                    client
-                        .subscribe(constants::state_subscribeStorage, request.params)
-                        .await
-                };
-
-                match stream {
-                    Err(err) => {
-                        log::warn!(
-                            "Error occurred when get latest storage for `{}`: {}",
-                            session.chain(),
-                            err
-                        )
-                    }
-
-                    Ok(mut stream) => {
-                        // we only get the first item for initial changes
-                        let latest = stream.next().await.expect("get first stream item");
-                        log::debug!("{:?}", latest);
-                        let result: Result<StateStorage, _> =
-                            serde_json::value::from_value(latest.params.result.clone());
-
-                        // when get the first item, we unsubscribe this.
-                        let client = client.clone();
-                        tokio::spawn(async move {
-                            let client = client.read().await;
-                            let res = client
-                                .unsubscribe(constants::state_unsubscribeStorage, stream.id.clone())
-                                .await;
-
-                            match res {
-                                Ok(false) => {
-                                    log::warn!(
-                                        "cannot cancel subscription `{}`, id: {}",
-                                        constants::state_unsubscribeStorage,
-                                        stream.id
-                                    );
-                                }
-                                Err(err) => {
-                                    log::warn!(
-                                        "Error occurred when send `{}`, id: {}, error: {}",
-                                        constants::state_unsubscribeStorage,
-                                        stream.id,
-                                        err
-                                    )
-                                }
-                                _ => {}
-                            };
-                        });
-
-                        match result {
-                            Ok(result) => {
-                                let subscription_id: Id = serde_json::from_value(success.result)
-                                    .expect("get subscription_id");
-
-                                let result = serde_json::to_value(result).expect("never panic");
-                                let latest_changes = SubscriptionNotification::new(
-                                    constants::state_storage,
-                                    SubscriptionNotificationParams::new(subscription_id, result),
-                                );
-                                let msg = serialize_subscribed_message(&session, &latest_changes);
-                                let _res = conn.send_compression_data(msg).await;
-                            }
-
-                            Err(err) => {
-                                log::warn!(
-                                    "Receive an illegal state_storage data: {}: {}",
-                                    err,
-                                    &latest
-                                )
-                            }
-                        };
-                    }
-                }
+                // send the latest storage from cache.
+                let subscription_id: Id =
+                    serde_json::from_value(success.result).expect("never panic");
+                send_latest_storage(conn.clone(), &session, subscription_id).await;
             }
         };
     }
     log::debug!("Connection {} receiver closed", conn.addr());
+}
+
+async fn send_latest_storage(conn: WsConnection, session: &Session, subscription_id: Id) {
+    // we need get the latest storage for these keys.
+    let client = conn.get_client(&session.chain()).expect("get chain client");
+    let client = client.read().await;
+    let ctx = client.ctx.as_ref().expect("get client context");
+    let dispatchers = ctx.handler.dispatchers();
+    let dispatcher = dispatchers
+        .get(constants::state_subscribeStorage)
+        .expect("get storage dispatcher");
+    match dispatcher.as_ref() {
+        DispatcherType::StateStorageDispatcher(s) => {
+            let storage = s.cache_cur_storage.read().await;
+            match storage.as_ref() {
+                Some(storage) => {
+                    let result = serde_json::to_value(storage).expect("serialize runtime_version");
+                    let data = SubscriptionNotification::new(
+                        constants::state_runtimeVersion,
+                        SubscriptionNotificationParams::new(subscription_id, result),
+                    );
+
+                    let msg = serialize_subscribed_message(session, &data);
+                    let _res = conn.send_compression_data(msg).await;
+                }
+                None => {
+                    // TODO: should we panic?
+                }
+            }
+        }
+        _ => {
+            panic!("get storage dispatcher. qed.")
+        }
+    }
 }
 
 // TODO: impl a registry for the following pattern
@@ -321,6 +280,7 @@ pub fn handle_subscription_response(
     for (method, receiver) in receivers {
         match method {
             Method::SubscribeStorage => {
+                // TODO
                 tokio::spawn(start_state_storage_handle(
                     sessions.storage.clone(),
                     conn.clone(),
