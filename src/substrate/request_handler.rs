@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap, fmt::Debug, sync::Arc};
 use async_jsonrpc_client::Output;
 use tokio::sync::{mpsc, RwLock};
 
-use crate::substrate::dispatch::{DispatcherType};
+use crate::substrate::dispatch::DispatcherType;
 use crate::substrate::Method;
 use crate::{
     message::{

@@ -10,7 +10,7 @@ use crate::{
     rpc_client::{NotificationStream, RpcClient},
     websocket::WsConnections,
 };
-:
+
 #[async_trait]
 pub trait SubscriptionDispatcher: Send + Debug + 'static + Sync {
     fn method(&self) -> &'static str;
