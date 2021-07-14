@@ -1,5 +1,0 @@
-{
-    "id": "b6c6d0aa16b0f5eb65e6fd87c6ffbba2",
-    "chain": "polkadot",
-    "data": "{\"jsonrpc\":\"2.0\",\"method\":\"chain_allHead\",\"params\":{\"subscription\":\"2MFbrBh61dbIbdYq\",\"result\":{\"digest\":{\"logs\":[\"0x0642414245b5010104000000d9350b1000000000ec26d54f51774b0a1c1263d01fef818ed61cec6af8d9f7d730cc4525663d494ca2bcd06f78b6179ef61a423b47750bb83aa5f0da3110a235a23e437b2820810d983214745ed84f55894597640a2e3b5cf409cce7d39f9ef932190bda96b1640d\",\"0x05424142450101f0a13c7b1a831008e2552cd1ad853aaff640b931cb914e81ea3b77429e3d427663dd158dd51c1d85efa27cd67903b21cc4f083d4ded552504f157a541d38658c\"]},\"extrinsicsRoot\":\"0xac095354daaae14444b8545aca063042842c5f98c83933de98949fb728e83faf\",\"number\":\"0x3e122e\",\"parentHash\":\"0xe3d16d7a83718e527126dc7d747c6e0809ba221e4d8ac21b6f8787e58e0e9521\",\"stateRoot\":\"0xb50da17673651bcafef3fdd5eeb755afc0531b54a771922931ae8147a5c800e6\"}}}"
-}
