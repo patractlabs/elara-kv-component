@@ -217,6 +217,7 @@ dependencies = [
  "futures",
  "jsonrpc-pubsub",
  "log",
+ "once_cell",
  "serde",
  "serde_json",
  "structopt",

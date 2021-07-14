@@ -4,6 +4,10 @@ use async_jsonrpc_client::Output;
 use tokio::sync::{mpsc, RwLock};
 
 use crate::substrate::dispatch::DispatcherType;
+use crate::substrate::service::{
+    StateStorageTransformer, SubscriptionTransformer,
+};
+use crate::substrate::session::StorageKeys;
 use crate::substrate::Method;
 use crate::{
     message::{
@@ -23,7 +27,9 @@ use crate::{
     websocket::{MessageHandler, WsConnection},
     Chain,
 };
+use std::collections::HashSet;
 
+/// It handles requests that will cause state(sessions) changes.
 pub struct RequestHandler {
     senders: Option<MethodSenders>,
     receivers: Option<MethodReceivers>,
@@ -133,8 +139,8 @@ pub async fn start_handle<SessionItem: ISession, S: Debug + ISessions<SessionIte
     }
 }
 
-// This is a special version for handling state runtimeVersion.
-// Because we need the initial runtimeVersion from chain.
+/// This is a special version for handling state runtimeVersion.
+/// Because we need the initial runtimeVersion from chain.
 pub async fn start_state_runtime_version_handle(
     sessions: Arc<RwLock<RuntimeVersionSessions>>,
     conn: WsConnection,
@@ -205,8 +211,8 @@ async fn send_latest_runtime_version(
     }
 }
 
-// This is a special version for handling state storage.
-// Because we need return the latest storage immediately.
+/// This is a special version for handling state storage.
+/// Because we need return the latest storage immediately.
 pub async fn start_state_storage_handle(
     sessions: Arc<RwLock<StorageSessions>>,
     conn: WsConnection,
@@ -222,21 +228,27 @@ pub async fn start_state_storage_handle(
                 let _res = conn.send_text(msg).await;
             }
 
-            Ok(success) => {
+            Ok((success, keys)) => {
                 let msg = serialize_success_response(&session, &success);
                 let _res = conn.send_text(msg).await;
                 // send the latest storage from cache.
                 let subscription_id: Id =
                     serde_json::from_value(success.result).expect("never panic");
-                send_latest_storage(conn.clone(), &session, subscription_id).await;
+                send_latest_storage(conn.clone(), &session, subscription_id, keys).await;
             }
         };
     }
     log::debug!("Connection {} receiver closed", conn.addr());
 }
 
-async fn send_latest_storage(conn: WsConnection, session: &Session, subscription_id: Id) {
-    // we need get the latest storage for these keys.
+/// Send latest storage cached by client to peer.
+async fn send_latest_storage(
+    conn: WsConnection,
+    session: &Session,
+    subscription_id: Id,
+    keys: StorageKeys<HashSet<String>>,
+) {
+    // we need get the latest storage from rpc client context
     let client = conn.get_client(&session.chain()).expect("get chain client");
     let client = client.read().await;
     let ctx = client.ctx.as_ref().expect("get client context");
@@ -246,17 +258,18 @@ async fn send_latest_storage(conn: WsConnection, session: &Session, subscription
         .expect("get storage dispatcher");
     match dispatcher {
         DispatcherType::StateStorageDispatcher(s) => {
-            let storage = s.cache_cur_storage.read().await;
+            let storage = { s.cache_cur_storage.read().await.clone() };
             match storage.as_ref() {
                 Some(storage) => {
-                    let result = serde_json::to_value(storage).expect("serialize runtime_version");
-                    let data = SubscriptionNotification::new(
-                        constants::state_runtimeVersion,
-                        SubscriptionNotificationParams::new(subscription_id, result),
-                    );
-
-                    let msg = serialize_subscribed_message(session, &data);
-                    let _res = conn.send_compression_data(msg).await;
+                    // TODO: filter storage by session keys
+                    if let Some(data) = StateStorageTransformer::transform(
+                        &(session.clone(), keys),
+                        subscription_id.clone(),
+                        storage.clone(),
+                    ) {
+                        let msg = serialize_subscribed_message(session, &data);
+                        let _res = conn.send_compression_data(msg).await;
+                    }
                 }
                 None => {
                     // TODO: should we panic?

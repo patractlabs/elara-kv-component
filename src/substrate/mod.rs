@@ -20,6 +20,7 @@ pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
 pub type MethodSenders = HashMap<Method, MethodSender>;
 pub type MethodReceivers = HashMap<Method, MethodReceiver>;
 
+/// All substrate subscription methods that we supported.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Method {
     NotFound,

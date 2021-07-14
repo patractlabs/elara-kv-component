@@ -83,7 +83,7 @@ pub fn handle_state_subscribeStorage(
     sessions: &mut StorageSessions,
     session: Session,
     request: MethodCall,
-) -> Result<Success, Error> {
+) -> Result<(Success, StorageKeys<HashSet<String>>), Error> {
     let params: Vec<Vec<String>> = request.params.unwrap_or_default().parse()?;
     let storage_keys = match params {
         arr if arr.len() > 1 => {
@@ -111,8 +111,8 @@ pub fn handle_state_subscribeStorage(
         id,
         storage_keys
     );
-    sessions.insert(id.clone(), (session, storage_keys));
-    Ok(Success::new(id.into(), request.id))
+    sessions.insert(id.clone(), (session, storage_keys.clone()));
+    Ok((Success::new(id.into(), request.id), storage_keys))
 }
 
 #[allow(non_snake_case)]
@@ -218,7 +218,7 @@ mod tests {
         )
         .unwrap();
 
-        let success = handle_state_subscribeStorage(&mut sessions, session, request).unwrap();
+        let (success, _) = handle_state_subscribeStorage(&mut sessions, session, request).unwrap();
 
         // unsubscribe
         let session = Session {

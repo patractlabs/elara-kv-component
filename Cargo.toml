@@ -21,6 +21,7 @@ tokio-tungstenite = { version = "0.15", features = ["connect", "rustls-tls", "st
 toml = "0.5"
 async-trait = "0.1.42"
 flate2 = "1.0.20"
+once_cell = "1.7"
 
 [[bin]]
 name = "elara-kv"

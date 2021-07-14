@@ -11,11 +11,13 @@ use crate::{
     websocket::WsConnections,
 };
 
+/// SubscriptionDispatcher handle a subscription data stream according to method.
 #[async_trait]
 pub trait SubscriptionDispatcher: Send + Debug + 'static + Sync {
+    /// Subscription method.
     fn method(&self) -> &'static str;
 
-    // TODO: refine this
+    /// Dispatch subscription task. It should be called only once.
     async fn dispatch(&self, conns: WsConnections, stream: NotificationStream);
 }
 
@@ -90,6 +92,7 @@ impl DispatcherHandler {
         Default::default()
     }
 
+    /// Returns the inner all dispatchers.
     pub fn dispatchers(&self) -> &HashMap<&'static str, DispatcherType> {
         &self.dispatchers
     }
