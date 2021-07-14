@@ -26,11 +26,6 @@ flate2 = "1.0.20"
 name = "elara-kv"
 path = "bin/main.rs"
 
-
-[[bin]]
-name = "test_one_conn_unsubscribe"
-path = "bin/tests/test_one_conn_unsubscribe.rs"
-
 [features]
 test_unsubscribe = []
 test_multi_clients = []
