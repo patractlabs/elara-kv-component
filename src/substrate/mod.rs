@@ -103,6 +103,8 @@ impl From<&String> for Method {
 
 pub mod constants {
     pub const state_getRuntimeVersion: &str = "state_getRuntimeVersion";
+    pub const state_getStorage: &str = "state_getStorage";
+    pub const state_queryStorageAt: &str = "state_queryStorageAt";
     pub const system_health: &str = "system_health";
 
     pub const state_subscribeStorage: &str = "state_subscribeStorage";
