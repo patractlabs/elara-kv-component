@@ -10,8 +10,7 @@ use crate::{
     rpc_client::{NotificationStream, RpcClient},
     websocket::WsConnections,
 };
-use std::sync::Arc;
-
+:
 #[async_trait]
 pub trait SubscriptionDispatcher: Send + Debug + 'static + Sync {
     fn method(&self) -> &'static str;
@@ -70,12 +69,12 @@ impl DispatcherType {
     async fn dispatch(&self, conns: WsConnections, stream: NotificationStream) {
         use DispatcherType::*;
         match self {
-            StateStorageDispatcher(s) => s.dispatch(conns, stream),
-            StateRuntimeVersionDispatcher(s) => s.dispatch(conns, stream),
-            ChainNewHeadDispatcher(s) => s.dispatch(conns, stream),
-            ChainFinalizedHeadDispatcher(s) => s.dispatch(conns, stream),
-            ChainAllHeadDispatcher(s) => s.dispatch(conns, stream),
-            GrandpaJustificationDispatcher(s) => s.dispatch(conns, stream),
+            StateStorageDispatcher(s) => s.dispatch(conns, stream).await,
+            StateRuntimeVersionDispatcher(s) => s.dispatch(conns, stream).await,
+            ChainNewHeadDispatcher(s) => s.dispatch(conns, stream).await,
+            ChainFinalizedHeadDispatcher(s) => s.dispatch(conns, stream).await,
+            ChainAllHeadDispatcher(s) => s.dispatch(conns, stream).await,
+            GrandpaJustificationDispatcher(s) => s.dispatch(conns, stream).await,
         };
     }
 }
@@ -83,7 +82,7 @@ impl DispatcherType {
 /// DispatcherHandler manage lifetime of all dispatchers.
 #[derive(Default, Clone)]
 pub struct DispatcherHandler {
-    dispatchers: HashMap<&'static str, Arc<DispatcherType>>,
+    dispatchers: HashMap<&'static str, DispatcherType>,
 }
 
 impl DispatcherHandler {
@@ -91,7 +90,7 @@ impl DispatcherHandler {
         Default::default()
     }
 
-    pub fn dispatchers(&self) -> &HashMap<&'static str, Arc<DispatcherType>> {
+    pub fn dispatchers(&self) -> &HashMap<&'static str, DispatcherType> {
         &self.dispatchers
     }
 
@@ -103,7 +102,7 @@ impl DispatcherHandler {
         let method = dispatcher.method();
         if self
             .dispatchers
-            .insert(method, Arc::new(DispatcherType::from(dispatcher)))
+            .insert(method, DispatcherType::from(dispatcher))
             .is_some()
         {
             panic!("`{}` dispatcher is duplicated", method);

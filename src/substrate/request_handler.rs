@@ -244,7 +244,7 @@ async fn send_latest_storage(conn: WsConnection, session: &Session, subscription
     let dispatcher = dispatchers
         .get(constants::state_subscribeStorage)
         .expect("get storage dispatcher");
-    match dispatcher.as_ref() {
+    match dispatcher {
         DispatcherType::StateStorageDispatcher(s) => {
             let storage = s.cache_cur_storage.read().await;
             match storage.as_ref() {
