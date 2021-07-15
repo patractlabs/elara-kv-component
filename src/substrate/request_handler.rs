@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap, fmt::Debug, sync::Arc};
 use async_jsonrpc_client::Output;
 use tokio::sync::{mpsc, RwLock};
 
-use crate::message::{Value};
+use crate::message::Value;
 use crate::substrate::dispatch::DispatcherType;
 use crate::substrate::rpc::state::StateStorage;
 use crate::substrate::session::StorageKeys;
@@ -169,13 +169,15 @@ pub async fn start_state_runtime_version_handle(
     }
 }
 
-async fn send_cached_runtime_version(conn: WsConnection, session: &Session, subscription_id: Id, runtime_version: RuntimeVersion) {
+async fn send_cached_runtime_version(
+    conn: WsConnection,
+    session: &Session,
+    subscription_id: Id,
+    runtime_version: RuntimeVersion,
+) {
     let data = SubscriptionNotification::new(
         constants::state_runtimeVersion,
-        SubscriptionNotificationParams::<RuntimeVersion>::new(
-            subscription_id,
-            runtime_version,
-        ),
+        SubscriptionNotificationParams::<RuntimeVersion>::new(subscription_id, runtime_version),
     );
     let msg = serialize_subscribed_message(session, &data);
     let _res = conn.send_compression_data(msg).await;
@@ -192,7 +194,8 @@ async fn send_latest_runtime_version(conn: WsConnection, session: &Session, subs
             let cache = { s.cache.read().await.clone() };
             match cache {
                 Some(runtime_version) => {
-                    send_cached_runtime_version(conn, session, subscription_id, runtime_version).await;
+                    send_cached_runtime_version(conn, session, subscription_id, runtime_version)
+                        .await;
                 }
                 None => {
                     // Fetch and cache runtime version from chain node.
@@ -201,12 +204,13 @@ async fn send_latest_runtime_version(conn: WsConnection, session: &Session, subs
                     log::debug!("get the first runtime_version: {:?}", res);
                     match res {
                         Ok(Output::Success(data)) => {
-                            let runtime_version: Result<RuntimeVersion, _> = serde_json::from_value(data.result.clone());
+                            let runtime_version: Result<RuntimeVersion, _> =
+                                serde_json::from_value(data.result.clone());
                             // validate runtime version format
                             match runtime_version {
                                 Err(err) => {
                                     log::warn!("Received a illegal runtime_version: {}", err);
-                                    return
+                                    return;
                                 }
                                 Ok(data) => {
                                     let mut cache = s.cache.write().await;
