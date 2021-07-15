@@ -1,6 +1,6 @@
 [ws]
 # Elara kv websocket service address
-addr = "localhost:9002"
+addr = "127.0.0.1:9002"
 
 [client]
 max_request_cap = 256

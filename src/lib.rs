@@ -6,7 +6,6 @@ pub mod rpc_client;
 pub mod session;
 pub mod substrate;
 pub mod websocket;
-
 use anyhow::Result;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -16,6 +15,7 @@ use tokio_tungstenite::tungstenite::{Error, Message};
 
 use crate::config::ServiceConfig;
 use crate::message::WsClientError;
+use crate::rpc_client::RpcClientCtx;
 use crate::substrate::dispatch::{
     ChainAllHeadDispatcher, ChainFinalizedHeadDispatcher, ChainNewHeadDispatcher,
     DispatcherHandler, GrandpaJustificationDispatcher, StateRuntimeVersionDispatcher,
@@ -111,8 +111,8 @@ async fn create_clients(
     let mut clients: RpcClients = Default::default();
     // started to subscribe chain node by ws client
     for (chain, node) in config.nodes.iter() {
-        let client = RpcClient::new(chain.clone(), node.url.clone(), config.client).await?;
-        subscribe_chain(connections.clone(), &client).await;
+        let mut client = RpcClient::new(chain.clone(), node.url.clone(), config.client).await?;
+        subscribe_chain(connections.clone(), &mut client).await;
         let client = Arc::new(RwLock::new(client));
         tokio::spawn(health_check(connections.clone(), client.clone()));
         // maintains these clients
@@ -138,7 +138,7 @@ async fn health_check(connections: WsConnections, client: ArcRpcClient) {
 
             let res = match res {
                 Err(err) => Err(err),
-                Ok(()) => register_subscriptions(&*client, connections.clone()).await,
+                Ok(()) => start_subscriptions(&mut client, connections.clone()).await,
             };
 
             if let Err(err) = res {
@@ -153,8 +153,9 @@ async fn health_check(connections: WsConnections, client: ArcRpcClient) {
     }
 }
 
-async fn register_subscriptions(
-    client: &RpcClient,
+/// register all dispatchers and init client context.
+async fn start_subscriptions(
+    client: &mut RpcClient,
     conns: WsConnections,
 ) -> Result<(), WsClientError> {
     let chain = client.chain();
@@ -165,17 +166,18 @@ async fn register_subscriptions(
     handler.register_dispatcher(ChainFinalizedHeadDispatcher::new(chain.clone()));
     handler.register_dispatcher(ChainAllHeadDispatcher::new(chain.clone()));
     handler.register_dispatcher(GrandpaJustificationDispatcher::new(chain));
-
-    handler.start_dispatch(client, conns).await
+    handler.start_dispatch(client, conns).await?;
+    client.ctx.insert(RpcClientCtx { handler });
+    Ok(())
 }
 
-async fn subscribe_chain(connections: WsConnections, client: &RpcClient) {
+async fn subscribe_chain(connections: WsConnections, client: &mut RpcClient) {
     log::info!(
         "Start to subscribe chain `{}` from `{}`",
         client.chain(),
         client.addr()
     );
-    register_subscriptions(client, connections)
+    start_subscriptions(client, connections)
         .await
         .unwrap_or_else(|_| panic!("Cannot subscribe chain `{}`", client.chain()))
 }

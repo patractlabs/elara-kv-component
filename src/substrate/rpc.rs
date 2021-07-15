@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+/// Chain related data.
 pub mod chain {
     use super::*;
 
@@ -19,6 +20,7 @@ pub mod chain {
     }
 }
 
+/// Grandpa related data.
 pub mod grandpa {
     use super::*;
 
@@ -39,6 +41,7 @@ pub mod grandpa {
     }
 }
 
+/// State related data.
 pub mod state {
     use super::*;
 

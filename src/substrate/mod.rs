@@ -20,6 +20,7 @@ pub type MethodReceiver = UnboundedReceiver<(Session, MethodCall)>;
 pub type MethodSenders = HashMap<Method, MethodSender>;
 pub type MethodReceivers = HashMap<Method, MethodReceiver>;
 
+/// All substrate subscription methods that we supported.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Method {
     NotFound,
@@ -44,10 +45,10 @@ pub enum Method {
 }
 
 impl Method {
-    pub fn to_option(&self) -> Option<Method> {
+    pub fn to_option(self) -> Option<Method> {
         match self {
             Method::NotFound => None,
-            other => Some(*other),
+            other => Some(other),
         }
     }
 }
@@ -102,6 +103,8 @@ impl From<&String> for Method {
 
 pub mod constants {
     pub const state_getRuntimeVersion: &str = "state_getRuntimeVersion";
+    pub const state_getStorage: &str = "state_getStorage";
+    pub const state_queryStorageAt: &str = "state_queryStorageAt";
     pub const system_health: &str = "system_health";
 
     pub const state_subscribeStorage: &str = "state_subscribeStorage";

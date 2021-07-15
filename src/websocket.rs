@@ -253,6 +253,7 @@ impl WsConnection {
         chains.get(chain).cloned()
     }
 
+    #[inline]
     pub fn get_client(&self, chain: &Chain) -> Option<ArcRpcClient> {
         self.clients.get(chain).cloned()
     }
@@ -312,6 +313,7 @@ impl WsConnection {
         Ok(())
     }
 
+    #[inline]
     async fn handle_config_request(&self, cfg: ConfigRequest) -> ElaraResponse {
         self.set_compression_type(cfg.compression);
         ElaraResponse::config_response(cfg.id, None)

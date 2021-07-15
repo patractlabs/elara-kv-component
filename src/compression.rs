@@ -2,6 +2,7 @@ use std::io::{Result, Write};
 
 use flate2::{write, Compression};
 
+/// Encode for WebSocket data.
 pub trait Encoder: Send + Sync {
     fn encode<T: AsRef<[u8]>, W: Write>(&self, input: &T, output: W) -> Result<W>;
 }

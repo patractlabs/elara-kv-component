@@ -6,6 +6,9 @@ use async_jsonrpc_client::{
 };
 use tokio::sync::RwLock;
 
+use crate::message::Value;
+use crate::substrate::constants::state_queryStorageAt;
+use crate::substrate::dispatch::{DispatcherHandler, DispatcherType};
 use crate::{
     config::RpcClientConfig,
     message::Id,
@@ -22,6 +25,15 @@ pub struct RpcClient {
     ws: WsClient,
     chain: Chain,
     addr: String,
+    // TODO: use arc for splitting lifetime
+    pub ctx: Option<RpcClientCtx>,
+}
+
+/// Context for a rpc client.
+/// It may contains some caches for subscription data.
+#[derive(Clone)]
+pub struct RpcClientCtx {
+    pub handler: DispatcherHandler,
 }
 
 pub type ArcRpcClient = Arc<RwLock<RpcClient>>;
@@ -44,12 +56,22 @@ impl RpcClient {
             WsClient::new(addr.as_str()).await?
         };
 
-        Ok(Self { chain, ws, addr })
+        Ok(Self {
+            chain,
+            ws,
+            addr,
+            ctx: Default::default(),
+        })
     }
 
     #[inline]
     pub fn addr(&self) -> String {
         self.addr.clone()
+    }
+
+    pub fn dispatcher_ref(&self, method: &str) -> Option<&DispatcherType> {
+        let ctx = self.ctx.as_ref().expect("get client context");
+        ctx.handler.dispatchers().get(method)
     }
 
     #[inline]
@@ -64,6 +86,15 @@ impl RpcClient {
 
     pub async fn get_runtime_version(&self) -> Result<Output> {
         self.ws.request(state_getRuntimeVersion, None).await
+    }
+
+    pub async fn query_storage_at(&self, keys: Vec<Value>) -> Result<Output> {
+        self.ws
+            .request(
+                state_queryStorageAt,
+                Some(Params::Array(vec![Value::Array(keys)])),
+            )
+            .await
     }
 
     #[inline]

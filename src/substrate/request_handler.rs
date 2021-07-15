@@ -3,6 +3,10 @@ use std::{borrow::BorrowMut, collections::HashMap, fmt::Debug, sync::Arc};
 use async_jsonrpc_client::Output;
 use tokio::sync::{mpsc, RwLock};
 
+use crate::message::Value;
+use crate::substrate::dispatch::DispatcherType;
+use crate::substrate::rpc::state::StateStorage;
+use crate::substrate::session::StorageKeys;
 use crate::substrate::Method;
 use crate::{
     message::{
@@ -10,19 +14,20 @@ use crate::{
         ElaraResponse, Error, Failure, Id, MethodCall, SubscriptionNotification,
         SubscriptionNotificationParams, Success,
     },
-    rpc_client::ArcRpcClient,
     session::{ISession, ISessions, Session},
     substrate::{
         constants,
         handles::*,
-        rpc::state::{RuntimeVersion, StateStorage},
+        rpc::state::RuntimeVersion,
         session::{RuntimeVersionSessions, StorageSessions, SubscriptionSessions},
         MethodReceiver, MethodReceivers, MethodSenders,
     },
     websocket::{MessageHandler, WsConnection},
     Chain,
 };
+use std::collections::HashSet;
 
+/// It handles requests that will cause state(sessions) changes.
 pub struct RequestHandler {
     senders: Option<MethodSenders>,
     receivers: Option<MethodReceivers>,
@@ -132,8 +137,8 @@ pub async fn start_handle<SessionItem: ISession, S: Debug + ISessions<SessionIte
     }
 }
 
-// This is a special version for handling state runtimeVersion.
-// Because we need the initial runtimeVersion from chain.
+/// This is a special version for handling state runtimeVersion.
+/// Because we need the initial runtimeVersion from chain.
 pub async fn start_state_runtime_version_handle(
     sessions: Arc<RwLock<RuntimeVersionSessions>>,
     conn: WsConnection,
@@ -155,58 +160,91 @@ pub async fn start_state_runtime_version_handle(
                 let msg = serialize_success_response(&session, &success);
                 let _res = conn.send_text(msg).await;
 
-                // we need get the latest storage for these keys
-                let client = conn.get_client(&session.chain()).expect("get chain client");
+                // send the latest runtime version from rpc client
                 let subscription_id: Id =
                     serde_json::from_value(success.result).expect("never panic");
-
-                send_latest_runtime_version(conn.clone(), &session, client, subscription_id).await;
+                send_latest_runtime_version(conn.clone(), &session, subscription_id).await;
             }
         }
     }
 }
 
-async fn send_latest_runtime_version(
+async fn send_cached_runtime_version(
     conn: WsConnection,
     session: &Session,
-    client: ArcRpcClient,
     subscription_id: Id,
+    runtime_version: RuntimeVersion,
 ) {
+    let data = SubscriptionNotification::new(
+        constants::state_runtimeVersion,
+        SubscriptionNotificationParams::<RuntimeVersion>::new(subscription_id, runtime_version),
+    );
+    let msg = serialize_subscribed_message(session, &data);
+    let _res = conn.send_compression_data(msg).await;
+}
+
+async fn send_latest_runtime_version(conn: WsConnection, session: &Session, subscription_id: Id) {
+    let client = conn.get_client(&session.chain()).expect("get chain client");
     let client = client.read().await;
-    let res = client.get_runtime_version().await;
-
-    match res {
-        Ok(Output::Success(data)) => {
-            let runtime_version: Result<RuntimeVersion, _> = serde_json::from_value(data.result);
-            let runtime_version = match runtime_version {
-                Ok(runtime_version) => runtime_version,
-                Err(err) => {
-                    log::warn!("Received a illegal runtime_version: {}", err);
-                    return;
+    let dispatcher = client
+        .dispatcher_ref(constants::state_subscribeRuntimeVersion)
+        .expect("get runtime version dispatcher");
+    match dispatcher {
+        DispatcherType::StateRuntimeVersionDispatcher(s) => {
+            let cache = { s.cache.read().await.clone() };
+            match cache {
+                Some(runtime_version) => {
+                    send_cached_runtime_version(conn, session, subscription_id, runtime_version)
+                        .await;
                 }
-            };
-            let result = serde_json::to_value(runtime_version).expect("serialize runtime_version");
-            let data = SubscriptionNotification::new(
-                constants::state_runtimeVersion,
-                SubscriptionNotificationParams::new(subscription_id, result),
-            );
+                None => {
+                    // Fetch and cache runtime version from chain node.
+                    // Here is the deal with the cold start problem.
+                    let res = client.get_runtime_version().await;
+                    log::debug!("get the first runtime_version: {:?}", res);
+                    match res {
+                        Ok(Output::Success(data)) => {
+                            let runtime_version: Result<RuntimeVersion, _> =
+                                serde_json::from_value(data.result.clone());
+                            // validate runtime version format
+                            match runtime_version {
+                                Err(err) => {
+                                    log::warn!("Received a illegal runtime_version: {}", err);
+                                    return;
+                                }
+                                Ok(data) => {
+                                    let mut cache = s.cache.write().await;
+                                    cache.insert(data);
+                                }
+                            };
+                            let data = SubscriptionNotification::new(
+                                constants::state_runtimeVersion,
+                                SubscriptionNotificationParams::new(subscription_id, data.result),
+                            );
 
-            let msg = serialize_subscribed_message(session, &data);
-            let _res = conn.send_compression_data(msg).await;
+                            let msg = serialize_subscribed_message(session, &data);
+                            let _res = conn.send_compression_data(msg).await;
+                        }
+
+                        Ok(Output::Failure(data)) => {
+                            log::warn!("state_getRuntimeVersion failed: {:?}", data);
+                        }
+
+                        Err(err) => {
+                            log::warn!("send_latest_runtime_version: {}", err);
+                        }
+                    }
+                }
+            }
         }
-
-        Ok(Output::Failure(data)) => {
-            log::warn!("state_getRuntimeVersion failed: {:?}", data);
-        }
-
-        Err(err) => {
-            log::warn!("send_latest_runtime_version: {}", err);
+        _ => {
+            panic!("get runtime version dispatcher. qed.")
         }
     }
 }
 
-// This is a special version for handling state storage.
-// Because we need the initial changes from chain.
+/// This is a special version for handling state storage.
+/// Because we need return the latest storage immediately.
 pub async fn start_state_storage_handle(
     sessions: Arc<RwLock<StorageSessions>>,
     conn: WsConnection,
@@ -214,100 +252,111 @@ pub async fn start_state_storage_handle(
 ) {
     while let Some((session, request)) = receiver.recv().await {
         let mut sessions = sessions.write().await;
-        let res =
-            handle_state_subscribeStorage(sessions.borrow_mut(), session.clone(), request.clone());
-        match res {
+        match handle_state_subscribeStorage(sessions.borrow_mut(), session.clone(), request.clone())
+        {
             Err(err) => {
                 let msg = serialize_failure_response(&session, err);
                 let _res = conn.send_text(msg).await;
             }
 
-            Ok(success) => {
+            Ok((success, keys)) => {
                 let msg = serialize_success_response(&session, &success);
                 let _res = conn.send_text(msg).await;
-
-                // we need get the latest storage for these keys
-                let client = conn.get_client(&session.chain()).expect("get chain client");
-                let stream = {
-                    let client = client.read().await;
-                    log::debug!("start_subscribe {:?}", request.params);
-                    client
-                        .subscribe(constants::state_subscribeStorage, request.params)
-                        .await
-                };
-
-                match stream {
-                    Err(err) => {
-                        log::warn!(
-                            "Error occurred when get latest storage for `{}`: {}",
-                            session.chain(),
-                            err
-                        )
-                    }
-
-                    Ok(mut stream) => {
-                        // we only get the first item for initial changes
-                        let latest = stream.next().await.expect("get first stream item");
-                        log::debug!("{:?}", latest);
-                        let result: Result<StateStorage, _> =
-                            serde_json::value::from_value(latest.params.result.clone());
-
-                        // when get the first item, we unsubscribe this.
-                        let client = client.clone();
-                        tokio::spawn(async move {
-                            let client = client.read().await;
-                            let res = client
-                                .unsubscribe(constants::state_unsubscribeStorage, stream.id.clone())
-                                .await;
-
-                            match res {
-                                Ok(false) => {
-                                    log::warn!(
-                                        "cannot cancel subscription `{}`, id: {}",
-                                        constants::state_unsubscribeStorage,
-                                        stream.id
-                                    );
-                                }
-                                Err(err) => {
-                                    log::warn!(
-                                        "Error occurred when send `{}`, id: {}, error: {}",
-                                        constants::state_unsubscribeStorage,
-                                        stream.id,
-                                        err
-                                    )
-                                }
-                                _ => {}
-                            };
-                        });
-
-                        match result {
-                            Ok(result) => {
-                                let subscription_id: Id = serde_json::from_value(success.result)
-                                    .expect("get subscription_id");
-
-                                let result = serde_json::to_value(result).expect("never panic");
-                                let latest_changes = SubscriptionNotification::new(
-                                    constants::state_storage,
-                                    SubscriptionNotificationParams::new(subscription_id, result),
-                                );
-                                let msg = serialize_subscribed_message(&session, &latest_changes);
-                                let _res = conn.send_compression_data(msg).await;
-                            }
-
-                            Err(err) => {
-                                log::warn!(
-                                    "Receive an illegal state_storage data: {}: {}",
-                                    err,
-                                    &latest
-                                )
-                            }
-                        };
-                    }
-                }
+                // send the latest storage from cache.
+                let subscription_id: Id =
+                    serde_json::from_value(success.result).expect("never panic");
+                send_latest_storage(conn.clone(), &session, subscription_id, keys).await;
             }
         };
     }
     log::debug!("Connection {} receiver closed", conn.addr());
+}
+
+/// Send latest storage cached by client to peer.
+/// If it's `All` storage, we send it.
+/// If it's `Some` storage, we fetch data from chain node.
+async fn send_latest_storage(
+    conn: WsConnection,
+    session: &Session,
+    subscription_id: Id,
+    keys: StorageKeys<HashSet<String>>,
+) {
+    match keys {
+        // we get some storage data from chain node
+        StorageKeys::Some(keys) => {
+            let keys: Vec<Value> = keys.into_iter().map(Value::String).collect();
+            // we need get the latest storage from rpc client context
+            let client = conn.get_client(&session.chain()).expect("get chain client");
+            let client = client.read().await;
+            let res = client.query_storage_at(keys).await;
+
+            match res {
+                Ok(Output::Success(data)) => {
+                    // validate storage format
+                    let storage: Result<Vec<StateStorage>, _> =
+                        serde_json::from_value(data.result.clone());
+
+                    match storage {
+                        Err(err) => {
+                            log::warn!("Received a illegal state_storage: {}", err);
+                        }
+                        Ok(storages) if storages.len() != 1 => {
+                            log::warn!("Received a illegal state_storage: {:?}", storages);
+                        }
+                        Ok(storages) => {
+                            let data = SubscriptionNotification::new(
+                                constants::state_storage,
+                                SubscriptionNotificationParams::new(
+                                    subscription_id,
+                                    storages[0].clone(),
+                                ),
+                            );
+
+                            let msg = serialize_subscribed_message(session, &data);
+                            let _res = conn.send_compression_data(msg).await;
+                        }
+                    }
+                }
+
+                Ok(Output::Failure(data)) => {
+                    log::warn!("query_storage_at failed: {:?}", data);
+                }
+
+                Err(err) => {
+                    log::warn!("send_latest_storage: {}", err);
+                }
+            }
+        }
+
+        // we get all storage data from cache
+        StorageKeys::All => {
+            let client = conn.get_client(&session.chain()).expect("get chain client");
+            let client = client.read().await;
+            let dispatcher = client
+                .dispatcher_ref(constants::state_subscribeStorage)
+                .expect("get storage dispatcher");
+            match dispatcher {
+                DispatcherType::StateStorageDispatcher(s) => {
+                    let storage = { s.cache.read().await.clone() };
+                    // TODO: None ?
+                    if let Some(storage) = storage.as_ref() {
+                        let data = SubscriptionNotification::new(
+                            constants::state_storage,
+                            SubscriptionNotificationParams::<StateStorage>::new(
+                                subscription_id,
+                                storage.clone(),
+                            ),
+                        );
+                        let msg = serialize_subscribed_message(session, &data);
+                        let _res = conn.send_compression_data(msg).await;
+                    }
+                }
+                _ => {
+                    panic!("get storage dispatcher. qed.")
+                }
+            }
+        }
+    };
 }
 
 // TODO: impl a registry for the following pattern
@@ -321,6 +370,7 @@ pub fn handle_subscription_response(
     for (method, receiver) in receivers {
         match method {
             Method::SubscribeStorage => {
+                // TODO
                 tokio::spawn(start_state_storage_handle(
                     sessions.storage.clone(),
                     conn.clone(),
