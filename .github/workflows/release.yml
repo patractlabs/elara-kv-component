@@ -1,0 +1,69 @@
+name: release
+
+on:
+    push:
+        # Sequence of patterns matched against refs/tags
+        tags:
+            - "v*" # Any tag will cause release
+
+env:
+    CARGO_TERM_COLOR: always
+
+jobs:
+    release-info:
+        name: Release
+        runs-on: ubuntu-latest
+        # info used for release
+        outputs:
+            upload_url: ${{ steps.create-release.outputs.upload_url }}
+            tag: ${{ steps.get-tag.outputs.tag }}
+        steps:
+            - name: Release
+              id: create-release
+              uses: actions/create-release@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  tag_name: ${{ github.ref }}
+                  release_name: Release ${{ github.ref }}
+                  draft: false
+                  prerelease: false
+            - name: Get Tag
+              id: get-tag
+              uses: olegtarasov/get-tag@v2.1
+
+    echo-info:
+        name: Echo Info
+        needs: release-info
+        runs-on: ubuntu-latest
+        steps:
+            - name: Echo Info
+              run: |
+                  echo elara-kv-${{ needs.release-info.outputs.tag }}
+                  echo url:${{ needs.release-info.outputs.upload_url }}
+
+    release-linux:
+        name: Release on Ubuntu
+        # we need to know the upload URL
+        needs: release-info
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions-rs/toolchain@v1
+              with:
+                  toolchain: stable
+                  override: true
+            - uses: actions/checkout@v1
+            - name: Build
+              run: |
+                git submodule update --init --remote
+                cargo build --release
+
+            - name: Upload linux version
+              uses: actions/upload-release-asset@v1.0.1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  upload_url: ${{ needs.release-info.outputs.upload_url }}
+                  asset_path: ./target/release/elara-kv
+                  asset_name: elara-kv-${{ needs.release-info.outputs.tag }}-x86_64-ubuntu
+                  asset_content_type: application/octet-stream
