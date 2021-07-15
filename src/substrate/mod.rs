@@ -45,10 +45,10 @@ pub enum Method {
 }
 
 impl Method {
-    pub fn to_option(&self) -> Option<Method> {
+    pub fn to_option(self) -> Option<Method> {
         match self {
             Method::NotFound => None,
-            other => Some(*other),
+            other => Some(other),
         }
     }
 }

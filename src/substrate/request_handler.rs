@@ -284,7 +284,7 @@ async fn send_latest_storage(
     match keys {
         // we get some storage data from chain node
         StorageKeys::Some(keys) => {
-            let keys: Vec<Value> = keys.into_iter().map(|key| Value::String(key)).collect();
+            let keys: Vec<Value> = keys.into_iter().map(Value::String).collect();
             // we need get the latest storage from rpc client context
             let client = conn.get_client(&session.chain()).expect("get chain client");
             let client = client.read().await;
@@ -299,11 +299,9 @@ async fn send_latest_storage(
                     match storage {
                         Err(err) => {
                             log::warn!("Received a illegal state_storage: {}", err);
-                            return;
                         }
                         Ok(storages) if storages.len() != 1 => {
                             log::warn!("Received a illegal state_storage: {:?}", storages);
-                            return;
                         }
                         Ok(storages) => {
                             let data = SubscriptionNotification::new(
@@ -340,21 +338,17 @@ async fn send_latest_storage(
             match dispatcher {
                 DispatcherType::StateStorageDispatcher(s) => {
                     let storage = { s.cache.read().await.clone() };
-                    match storage.as_ref() {
-                        Some(storage) => {
-                            let data = SubscriptionNotification::new(
-                                constants::state_storage,
-                                SubscriptionNotificationParams::<StateStorage>::new(
-                                    subscription_id,
-                                    storage.clone(),
-                                ),
-                            );
-                            let msg = serialize_subscribed_message(session, &data);
-                            let _res = conn.send_compression_data(msg).await;
-                        }
-                        None => {
-                            // TODO: should we panic?
-                        }
+                    // TODO: None ?
+                    if let Some(storage) = storage.as_ref() {
+                        let data = SubscriptionNotification::new(
+                            constants::state_storage,
+                            SubscriptionNotificationParams::<StateStorage>::new(
+                                subscription_id,
+                                storage.clone(),
+                            ),
+                        );
+                        let msg = serialize_subscribed_message(session, &data);
+                        let _res = conn.send_compression_data(msg).await;
                     }
                 }
                 _ => {
