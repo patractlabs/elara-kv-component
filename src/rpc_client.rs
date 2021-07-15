@@ -7,14 +7,14 @@ use async_jsonrpc_client::{
 use tokio::sync::RwLock;
 
 use crate::message::Value;
-use crate::substrate::dispatch::DispatcherHandler;
+use crate::substrate::constants::state_queryStorageAt;
+use crate::substrate::dispatch::{DispatcherHandler, DispatcherType};
 use crate::{
     config::RpcClientConfig,
     message::Id,
     substrate::constants::{state_getRuntimeVersion, system_health},
     Chain,
 };
-use crate::substrate::constants::{state_queryStorageAt};
 
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
 pub type NotificationStream = WsSubscription<SubscriptionNotification>;
@@ -25,6 +25,7 @@ pub struct RpcClient {
     ws: WsClient,
     chain: Chain,
     addr: String,
+    // TODO: use arc for splitting lifetime
     pub ctx: Option<RpcClientCtx>,
 }
 
@@ -68,6 +69,11 @@ impl RpcClient {
         self.addr.clone()
     }
 
+    pub fn dispatcher_ref(&self, method: &str) -> Option<&DispatcherType> {
+        let ctx = self.ctx.as_ref().expect("get client context");
+        ctx.handler.dispatchers().get(method)
+    }
+
     #[inline]
     pub fn chain(&self) -> Chain {
         self.chain.clone()
@@ -84,7 +90,10 @@ impl RpcClient {
 
     pub async fn query_storage_at(&self, keys: Vec<Value>) -> Result<Output> {
         self.ws
-            .request(state_queryStorageAt, Some(Params::Array(vec![Value::Array(keys)])))
+            .request(
+                state_queryStorageAt,
+                Some(Params::Array(vec![Value::Array(keys)])),
+            )
             .await
     }
 

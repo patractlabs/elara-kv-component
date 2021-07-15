@@ -18,14 +18,14 @@ use tokio::sync::RwLock;
 pub struct StateStorageDispatcher {
     chain: Chain,
     /// cache the latest storage for first subscription response.
-    pub cache_cur_storage: Arc<RwLock<Option<StateStorage>>>,
+    pub cache: Arc<RwLock<Option<StateStorage>>>,
 }
 
 impl StateStorageDispatcher {
     pub fn new(chain: Chain) -> Self {
         Self {
             chain,
-            cache_cur_storage: Arc::new(RwLock::new(None)),
+            cache: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -39,16 +39,16 @@ impl SubscriptionDispatcher for StateStorageDispatcher {
     async fn dispatch(&self, conns: WsConnections, mut stream: NotificationStream) {
         let chain = self.chain.clone();
         let method = self.method();
-        let storage = self.cache_cur_storage.clone();
+        let cache = self.cache.clone();
 
         tokio::spawn(async move {
             while let Some(data) = stream.next().await {
                 // we get a new data then we send it to all conns
                 match serde_json::value::from_value::<StateStorage>(data.params.result.clone()) {
                     Ok(data) => {
-                        let mut storage = storage.write().await;
+                        let mut cache = cache.write().await;
                         // update storage cache
-                        storage.insert(data.clone());
+                        cache.insert(data.clone());
                         for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
@@ -74,11 +74,15 @@ impl SubscriptionDispatcher for StateStorageDispatcher {
 #[derive(Clone, Debug)]
 pub struct StateRuntimeVersionDispatcher {
     chain: Chain,
+    pub cache: Arc<RwLock<Option<RuntimeVersion>>>,
 }
 
 impl StateRuntimeVersionDispatcher {
     pub fn new(chain: Chain) -> Self {
-        Self { chain }
+        Self {
+            chain,
+            cache: Arc::new(RwLock::new(None)),
+        }
     }
 }
 
@@ -91,12 +95,15 @@ impl SubscriptionDispatcher for StateRuntimeVersionDispatcher {
     async fn dispatch(&self, conns: WsConnections, mut stream: NotificationStream) {
         let chain = self.chain.clone();
         let method = self.method();
+        let cache = self.cache.clone();
 
         tokio::spawn(async move {
             while let Some(data) = stream.next().await {
                 // we get a new data then we send it to all conns
                 match serde_json::value::from_value::<RuntimeVersion>(data.params.result.clone()) {
                     Ok(data) => {
+                        let mut cache = cache.write().await;
+                        cache.insert(data.clone());
                         for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
