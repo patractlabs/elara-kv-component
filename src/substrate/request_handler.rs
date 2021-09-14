@@ -214,7 +214,7 @@ async fn send_latest_runtime_version(conn: WsConnection, session: &Session, subs
                                 }
                                 Ok(data) => {
                                     let mut cache = s.cache.write().await;
-                                    cache.insert(data);
+                                    let _ = cache.insert(data);
                                 }
                             };
                             let data = SubscriptionNotification::new(

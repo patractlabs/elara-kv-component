@@ -167,7 +167,7 @@ async fn start_subscriptions(
     handler.register_dispatcher(ChainAllHeadDispatcher::new(chain.clone()));
     handler.register_dispatcher(GrandpaJustificationDispatcher::new(chain));
     handler.start_dispatch(client, conns).await?;
-    client.ctx.insert(RpcClientCtx { handler });
+    let _ = client.ctx.insert(RpcClientCtx { handler });
     Ok(())
 }
 
