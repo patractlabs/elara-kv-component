@@ -48,7 +48,7 @@ impl SubscriptionDispatcher for StateStorageDispatcher {
                     Ok(data) => {
                         let mut cache = cache.write().await;
                         // update storage cache
-                        cache.insert(data.clone());
+                        let _ = cache.insert(data.clone());
                         for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
@@ -103,7 +103,7 @@ impl SubscriptionDispatcher for StateRuntimeVersionDispatcher {
                 match serde_json::value::from_value::<RuntimeVersion>(data.params.result.clone()) {
                     Ok(data) => {
                         let mut cache = cache.write().await;
-                        cache.insert(data.clone());
+                        let _ = cache.insert(data.clone());
                         for (_, conn) in conns.inner().read().await.iter() {
                             let sessions = conn
                                 .get_sessions(&chain)
