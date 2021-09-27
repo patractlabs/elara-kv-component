@@ -10,5 +10,5 @@ max_cap_per_subscription = 64
 [nodes.polkadot]
 url = "wss://rpc.polkadot.io"
 # kusama config
-[nodes.kusama]
-url = "wss://kusama-rpc.polkadot.io"
+#[nodes.kusama]
+#url = "wss://kusama-rpc.polkadot.io"
