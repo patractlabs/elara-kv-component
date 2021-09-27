@@ -79,12 +79,12 @@ jobs:
                   git submodule update --init --remote
                   cargo build --release
 
-            - name: Upload linux version
+            - name: Upload windows version
               uses: actions/upload-release-asset@v1.0.1
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
                   upload_url: ${{ needs.release-info.outputs.upload_url }}
-                  asset_path: ./target/release/elara-kv
+                  asset_path: ./target/release/elara-kv.exe
                   asset_name: elara-kv-${{ needs.release-info.outputs.tag }}-x86_64-windows
                   asset_content_type: application/octet-stream
