@@ -2,12 +2,15 @@ pub mod cmd;
 pub mod compression;
 pub mod config;
 pub mod message;
+mod misc;
 pub mod rpc_client;
 pub mod session;
 pub mod substrate;
 pub mod websocket;
+
 use anyhow::Result;
 use futures::StreamExt;
+pub use misc::*;
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
@@ -205,14 +208,16 @@ async fn handle_connection(connection: WsConnection) {
                     Message::Binary(_) => {}
 
                     Message::Close(_) => {
-                        let _res = connection.send_close().await;
+                        let res = connection.send_close().await;
+                        handle_result(res, "handle close message");
                         break;
                     }
 
                     Message::Ping(_) => {
-                        let _res = connection
+                        let res = connection
                             .send_message(Message::Pong(b"pong".to_vec()))
                             .await;
+                        handle_result(res, "handle ping message");
                     }
 
                     Message::Text(s) => {

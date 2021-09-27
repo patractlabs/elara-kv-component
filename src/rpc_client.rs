@@ -99,7 +99,17 @@ impl RpcClient {
 
     #[inline]
     pub async fn is_alive(&self) -> bool {
-        self.system_health().await.is_ok()
+        let output = self.system_health().await;
+        match output {
+            Err(err) => {
+                log::info!("system_health failed for '{}': {:?}", self.chain, err);
+                false
+            }
+            Ok(output) => {
+                log::info!("system_health check for '{}': {}", self.chain, output);
+                true
+            }
+        }
     }
 
     // After `reconnect`ed, client need to re`subscribe`.

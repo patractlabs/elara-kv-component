@@ -9,6 +9,7 @@ use crate::substrate::rpc::state::StateStorage;
 use crate::substrate::session::StorageKeys;
 use crate::substrate::Method;
 use crate::{
+    handle_result,
     message::{
         serialize_failure_response, serialize_subscribed_message, serialize_success_response,
         ElaraResponse, Error, Failure, Id, MethodCall, SubscriptionNotification,
@@ -124,6 +125,7 @@ pub async fn start_handle<SessionItem: ISession, S: Debug + ISessions<SessionIte
         // We try to lock it instead of keeping it locked.
         // Because the lock time may be longer.
         let mut sessions = sessions.write().await;
+        let method = request.method.clone();
         let res = handle(sessions.borrow_mut(), session.clone(), request);
 
         let res = res
@@ -133,7 +135,8 @@ pub async fn start_handle<SessionItem: ISession, S: Debug + ISessions<SessionIte
             Ok(s) => s,
             Err(s) => s,
         };
-        let _res = conn.send_text(msg).await;
+        let res = conn.send_text(msg).await;
+        handle_result(res, format!("handle request {}", method));
     }
 }
 
@@ -180,7 +183,8 @@ async fn send_cached_runtime_version(
         SubscriptionNotificationParams::<RuntimeVersion>::new(subscription_id, runtime_version),
     );
     let msg = serialize_subscribed_message(session, &data);
-    let _res = conn.send_compression_data(msg).await;
+    let res = conn.send_compression_data(msg).await;
+    handle_result(res, "send the cached runtime_version");
 }
 
 async fn send_latest_runtime_version(conn: WsConnection, session: &Session, subscription_id: Id) {
@@ -209,7 +213,7 @@ async fn send_latest_runtime_version(conn: WsConnection, session: &Session, subs
                             // validate runtime version format
                             match runtime_version {
                                 Err(err) => {
-                                    log::warn!("Received a illegal runtime_version: {}", err);
+                                    log::error!("Received a illegal runtime_version: {}", err);
                                     return;
                                 }
                                 Ok(data) => {
@@ -223,7 +227,8 @@ async fn send_latest_runtime_version(conn: WsConnection, session: &Session, subs
                             );
 
                             let msg = serialize_subscribed_message(session, &data);
-                            let _res = conn.send_compression_data(msg).await;
+                            let res = conn.send_compression_data(msg).await;
+                            handle_result(res, "send the latest runtime_version");
                         }
 
                         Ok(Output::Failure(data)) => {
@@ -238,7 +243,7 @@ async fn send_latest_runtime_version(conn: WsConnection, session: &Session, subs
             }
         }
         _ => {
-            panic!("get runtime version dispatcher. qed.")
+            unreachable!("get runtime version dispatcher. qed.")
         }
     }
 }
@@ -256,12 +261,14 @@ pub async fn start_state_storage_handle(
         {
             Err(err) => {
                 let msg = serialize_failure_response(&session, err);
-                let _res = conn.send_text(msg).await;
+                let res = conn.send_text(msg).await;
+                handle_result(res, "send failure_response for latest state_storage");
             }
 
             Ok((success, keys)) => {
                 let msg = serialize_success_response(&session, &success);
-                let _res = conn.send_text(msg).await;
+                let res = conn.send_text(msg).await;
+                handle_result(res, "send the latest state_storage");
                 // send the latest storage from cache.
                 let subscription_id: Id =
                     serde_json::from_value(success.result).expect("never panic");
@@ -313,7 +320,8 @@ async fn send_latest_storage(
                             );
 
                             let msg = serialize_subscribed_message(session, &data);
-                            let _res = conn.send_compression_data(msg).await;
+                            let res = conn.send_compression_data(msg).await;
+                            handle_result(res, "send the latest state_storage");
                         }
                     }
                 }
@@ -348,12 +356,11 @@ async fn send_latest_storage(
                             ),
                         );
                         let msg = serialize_subscribed_message(session, &data);
-                        let _res = conn.send_compression_data(msg).await;
+                        let res = conn.send_compression_data(msg).await;
+                        handle_result(res, "send the latest all state_storage");
                     }
                 }
-                _ => {
-                    panic!("get storage dispatcher. qed.")
-                }
+                _ => unreachable!("get storage dispatcher. qed."),
             }
         }
     };
