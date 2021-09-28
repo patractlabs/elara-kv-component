@@ -1,8 +1,13 @@
 [ws]
 # Elara kv websocket service address
 addr = "127.0.0.1:9002"
+# default to 10
+heartbeat_interval_sec = 10
 
 [client]
+# response timeout
+# default to 3000
+timeout_ms = 3000
 max_request_cap = 256
 max_cap_per_subscription = 64
 
@@ -10,5 +15,5 @@ max_cap_per_subscription = 64
 [nodes.polkadot]
 url = "wss://rpc.polkadot.io"
 # kusama config
-#[nodes.kusama]
-#url = "wss://kusama-rpc.polkadot.io"
+[nodes.kusama]
+url = "wss://kusama-rpc.polkadot.io"

@@ -43,6 +43,7 @@ struct ServiceInnerConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsConfig {
     pub addr: String,
+    pub heartbeat_interval_sec: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -52,6 +53,7 @@ pub struct NodeConfig {
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct RpcClientConfig {
+    pub timeout_ms: Option<u64>,
     pub max_request_cap: Option<usize>,
     pub max_cap_per_subscription: Option<usize>,
 }
@@ -74,6 +76,7 @@ fn test_toml_config() {
     let config = ServiceInnerConfig {
         ws: WsConfig {
             addr: "localhost:9002".into(),
+            heartbeat_interval_sec: Some(10),
         },
         nodes,
         client: None,
