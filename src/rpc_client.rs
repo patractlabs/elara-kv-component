@@ -15,6 +15,7 @@ use crate::{
     substrate::constants::{state_getRuntimeVersion, system_health},
     Chain,
 };
+use tokio::time::Duration;
 
 pub type Result<T, E = WsClientError> = std::result::Result<T, E>;
 pub type NotificationStream = WsSubscription<SubscriptionNotification>;
@@ -25,6 +26,7 @@ pub struct RpcClient {
     ws: WsClient,
     chain: Chain,
     addr: String,
+    config: Option<RpcClientConfig>,
     // TODO: use arc for splitting lifetime
     pub ctx: Option<RpcClientCtx>,
 }
@@ -40,26 +42,33 @@ pub type ArcRpcClient = Arc<RwLock<RpcClient>>;
 pub type RpcClients = HashMap<Chain, ArcRpcClient>;
 
 impl RpcClient {
+    async fn create_ws_client(addr: &str, config: Option<RpcClientConfig>) -> Result<WsClient> {
+        let ws = if let Some(config) = config {
+            WsClient::builder()
+                .timeout(Duration::from_millis(config.timeout_ms.unwrap_or(3000)))
+                .max_concurrent_request_capacity(config.max_request_cap.unwrap_or(256))
+                .max_capacity_per_subscription(config.max_cap_per_subscription.unwrap_or(64))
+                .build(addr)
+                .await?
+        } else {
+            WsClient::new(addr).await?
+        };
+        Ok(ws)
+    }
+
     pub async fn new(
         chain: Chain,
         addr: impl Into<String>,
         config: Option<RpcClientConfig>,
     ) -> Result<Self> {
         let addr = addr.into();
-        let ws = if let Some(config) = config {
-            WsClient::builder()
-                .max_concurrent_request_capacity(config.max_request_cap.unwrap_or(256))
-                .max_capacity_per_subscription(config.max_cap_per_subscription.unwrap_or(64))
-                .build(addr.as_str())
-                .await?
-        } else {
-            WsClient::new(addr.as_str()).await?
-        };
+        let ws = Self::create_ws_client(addr.as_str(), config).await?;
 
         Ok(Self {
             chain,
             ws,
             addr,
+            config,
             ctx: Default::default(),
         })
     }
@@ -114,7 +123,7 @@ impl RpcClient {
 
     // After `reconnect`ed, client need to re`subscribe`.
     pub async fn reconnect(&mut self) -> Result<()> {
-        self.ws = WsClient::new(self.addr.as_str()).await?;
+        self.ws = Self::create_ws_client(self.addr.as_str(), self.config).await?;
         Ok(())
     }
 

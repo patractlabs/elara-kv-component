@@ -53,8 +53,8 @@ impl From<&str> for Chain {
     }
 }
 
-const CONN_EXPIRED_TIME_SECS: u64 = 10;
-const CHECK_CONN_ALIVE_SECS: u64 = 10;
+const CONN_EXPIRED_TIME_SEC: u64 = 10;
+const HEARTBEAT_INTERVAL_SEC: u64 = 10;
 
 pub async fn start_server(config: ServiceConfig) -> Result<()> {
     let server = WsServer::bind(config.ws.addr.as_str()).await?;
@@ -103,7 +103,7 @@ async fn remove_expired_connections(mut conns: WsConnections) {
             log::info!("Total connection num: {}", conns.len().await);
         }
 
-        tokio::time::sleep(Duration::from_secs(CONN_EXPIRED_TIME_SECS)).await;
+        tokio::time::sleep(Duration::from_secs(CONN_EXPIRED_TIME_SEC)).await;
     }
 }
 
@@ -117,7 +117,8 @@ async fn create_clients(
         let mut client = RpcClient::new(chain.clone(), node.url.clone(), config.client).await?;
         subscribe_chain(connections.clone(), &mut client).await;
         let client = Arc::new(RwLock::new(client));
-        tokio::spawn(health_check(connections.clone(), client.clone()));
+        let config = config.clone();
+        tokio::spawn(health_check(connections.clone(), client.clone(), config));
         // maintains these clients
         clients.insert(chain.clone(), client);
     }
@@ -126,14 +127,28 @@ async fn create_clients(
 }
 
 // if rpc client is not alive, we reconnect to peer
-async fn health_check(connections: WsConnections, client: ArcRpcClient) {
+async fn health_check(connections: WsConnections, client: ArcRpcClient, config: ServiceConfig) {
     loop {
-        tokio::time::sleep(Duration::from_secs(CHECK_CONN_ALIVE_SECS)).await;
+        tokio::time::sleep(Duration::from_secs(
+            config
+                .ws
+                .heartbeat_interval_sec
+                .unwrap_or(HEARTBEAT_INTERVAL_SEC),
+        ))
+        .await;
+        let mut is_alive = true;
+        // use read lock.
+        {
+            let client = client.read().await;
+            if !client.is_alive().await {
+                is_alive = false;
+            }
+        }
 
-        let mut client = client.write().await;
-        if !client.is_alive().await {
+        if !is_alive {
+            let mut client = client.write().await;
             log::info!(
-                "Trying to reconnect to `{}` to `{}`...",
+                "Trying to reconnect to `{}`/`{}`...",
                 client.chain(),
                 client.addr()
             );

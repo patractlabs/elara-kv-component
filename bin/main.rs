@@ -11,7 +11,7 @@ async fn main() -> Result<()> {
     let opt = CliOpts::init();
     let toml = fs::read_to_string(opt.config.as_path())?;
     let config = ServiceConfig::parse(toml)?;
-    log::debug!("Load config: {:#?}", config);
+    log::info!("Load config: {:#?}", config);
 
     start_server(config).await
 }
