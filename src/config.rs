@@ -76,7 +76,7 @@ fn test_toml_config() {
     let config = ServiceInnerConfig {
         ws: WsConfig {
             addr: "localhost:9002".into(),
-            heartbeat_interval_sec: Some(10)
+            heartbeat_interval_sec: Some(10),
         },
         nodes,
         client: None,
