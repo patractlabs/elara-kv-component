@@ -1,6 +1,6 @@
 [package]
 name = "elara-kv-component"
-version = "0.1.0"
+version = "0.1.2"
 authors = ["Patract Labs <https://github.com/patractlabs>"]
 edition = "2018"
 description = "Elara KV component for subscribing substrate node data"
